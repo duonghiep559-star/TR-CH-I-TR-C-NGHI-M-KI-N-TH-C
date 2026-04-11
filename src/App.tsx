@@ -1,0 +1,826 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload } from 'lucide-react';
+
+// --- TRÌNH TẠO ÂM THANH (WEB AUDIO API) ---
+// Lazy init để tránh lỗi autoplay của trình duyệt
+let audioCtx: AudioContext | null = null;
+
+const initAudio = () => {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+};
+
+const playTone = (freq: number, type: OscillatorType, duration: number, vol = 0.1) => {
+  try {
+    const ctx = initAudio();
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    gainNode.gain.setValueAtTime(vol, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  } catch (e) {
+    console.warn("Audio play failed", e);
+  }
+};
+
+const sounds = {
+  hover: () => playTone(800, 'sine', 0.1, 0.02),
+  correct: () => {
+    playTone(440, 'sine', 0.1, 0.1);
+    setTimeout(() => playTone(554, 'sine', 0.1, 0.1), 100);
+    setTimeout(() => playTone(659, 'sine', 0.2, 0.1), 200);
+    setTimeout(() => playTone(880, 'sine', 0.4, 0.15), 300);
+  },
+  wrong: () => {
+    playTone(300, 'sawtooth', 0.2, 0.1);
+    setTimeout(() => playTone(250, 'sawtooth', 0.4, 0.1), 200);
+  },
+  congrats: () => {
+    [440, 554, 659, 880, 1108].forEach((freq, i) => {
+      setTimeout(() => playTone(freq, 'square', 0.2, 0.1), i * 150);
+    });
+  }
+};
+
+// --- DỮ LIỆU MẪU BAN ĐẦU ---
+interface Question {
+  id: number;
+  text: string;
+  options: string[];
+  correctIndex: number;
+}
+
+interface Student {
+  id: string;
+  name: string;
+  score: number;
+}
+
+const initialQuestions: Question[] = Array.from({ length: 60 }, (_, i) => ({
+  id: i + 1,
+  text: `Câu hỏi số ${i + 1}: Điền vào chỗ trống...`,
+  options: ['Đáp án A', 'Đáp án B', 'Đáp án C', 'Đáp án D'],
+  correctIndex: 0
+}));
+
+export default function App() {
+  // States: Danh sách & Lớp học
+  const [classesData, setClassesData] = useState<Record<string, Student[]>>({
+    '9B': [
+      { id: '1', name: 'Nguyễn Văn A', score: 20 },
+      { id: '2', name: 'Trần Thị B', score: 10 },
+      { id: '3', name: 'Lê Hoàng C', score: 30 },
+      { id: '4', name: 'Phạm Thị D', score: 10 },
+    ]
+  });
+  const [currentClass, setCurrentClass] = useState('9B');
+  const [newClassName, setNewClassName] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const STUDENTS_PER_PAGE = 10;
+  
+  const students = classesData[currentClass] || [];
+  const [newStudentName, setNewStudentName] = useState('');
+
+  // States: Import/Export
+  const [showImportListModal, setShowImportListModal] = useState(false);
+  const [importText, setImportText] = useState('');
+  const jsonFileInputRef = useRef<HTMLInputElement>(null);
+
+  // States: Bảng câu hỏi & Trò chơi
+  const [questions, setQuestions] = useState<Question[]>(initialQuestions);
+  const [balls, setBalls] = useState<number[]>(Array.from({ length: 60 }, (_, i) => i + 1));
+  const [answeredBalls, setAnsweredBalls] = useState<number[]>([]);
+  
+  // States: Timer
+  const [timerInput, setTimerInput] = useState(10);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+
+  // States: Modals & UI
+  const [bgmPlaying, setBgmPlaying] = useState(false);
+  const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
+  const [answeringStudentId, setAnsweringStudentId] = useState('');
+  const [showAdmin, setShowAdmin] = useState(false);
+
+  // States: Custom Alert & Confirm Modals
+  const [confirmDialog, setConfirmDialog] = useState<{message: string, onConfirm: () => void} | null>(null);
+  const [alertDialog, setAlertDialog] = useState('');
+
+  // Nhạc nền (Loop)
+  const bgmInterval = useRef<number | null>(null);
+  const toggleBGM = () => {
+    initAudio(); // Đảm bảo audio context đã chạy
+    if (bgmPlaying) {
+      if (bgmInterval.current) clearInterval(bgmInterval.current);
+      setBgmPlaying(false);
+    } else {
+      setBgmPlaying(true);
+      bgmInterval.current = window.setInterval(() => {
+        const notes = [220, 246, 277, 329, 369]; // A ngũ cung
+        const randomNote = notes[Math.floor(Math.random() * notes.length)];
+        playTone(randomNote, 'sine', 2, 0.02);
+      }, 2000);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (bgmInterval.current) clearInterval(bgmInterval.current);
+    };
+  }, []);
+
+  // Reset trang khi đổi lớp hoặc tìm kiếm
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, currentClass]);
+
+  // Timer logic
+  useEffect(() => {
+    let interval: number | null = null;
+    if (isTimerRunning && timeLeft > 0) {
+      interval = window.setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+    } else if (timeLeft === 0 && isTimerRunning) {
+      setIsTimerRunning(false);
+      sounds.wrong(); // Báo hết giờ
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isTimerRunning, timeLeft]);
+
+  const startTimer = () => {
+    setTimeLeft(timerInput);
+    setIsTimerRunning(true);
+  };
+
+  // Logic Học sinh
+  const addStudent = () => {
+    if (newStudentName.trim()) {
+      setClassesData(prev => ({
+        ...prev,
+        [currentClass]: [...(prev[currentClass] || []), { id: Date.now().toString() + Math.random().toString(36).substring(2,9), name: newStudentName, score: 0 }]
+      }));
+      setNewStudentName('');
+    }
+  };
+
+  const removeStudent = (id: string) => {
+    setClassesData(prev => ({
+      ...prev,
+      [currentClass]: prev[currentClass].filter(s => s.id !== id)
+    }));
+  };
+
+  const updateStudentScore = (id: string, points: number) => {
+    setClassesData(prev => ({
+      ...prev,
+      [currentClass]: prev[currentClass].map(s => s.id === id ? { ...s, score: s.score + points } : s)
+    }));
+  };
+
+  // Logic Import/Export Danh sách
+  const handleTextFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImportText(e.target?.result as string);
+      };
+      reader.readAsText(file);
+    }
+    event.target.value = ''; // Reset
+  };
+
+  const handleImportListSubmit = () => {
+    if (!importText.trim()) {
+      setAlertDialog("Vui lòng dán hoặc tải lên danh sách học sinh!");
+      return;
+    }
+    const names = importText.split('\n').map(n => n.trim()).filter(n => n !== '');
+    const newStudents = names.map(name => ({ 
+      id: Date.now().toString() + Math.random().toString(36).substring(2,9), 
+      name, 
+      score: 0 
+    }));
+
+    setClassesData(prev => ({
+      ...prev,
+      [currentClass]: [...(prev[currentClass] || []), ...newStudents]
+    }));
+    setShowImportListModal(false);
+    setImportText('');
+    setAlertDialog(`Đã thêm thành công ${newStudents.length} học sinh vào lớp ${currentClass}.`);
+  };
+
+  const exportJSON = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(classesData, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", `Data_CacLop_${new Date().toLocaleDateString('vi-VN').replace(/\//g, '-')}.json`);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
+
+  const importJSON = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const json = JSON.parse(e.target?.result as string);
+          if (typeof json === 'object' && json !== null && !Array.isArray(json)) {
+            setClassesData(json);
+            const keys = Object.keys(json);
+            if (keys.length > 0 && !keys.includes(currentClass)) {
+              setCurrentClass(keys[0]);
+            }
+            setAlertDialog("Nhập dữ liệu JSON thành công!");
+          } else {
+            setAlertDialog("Cấu trúc file JSON không hợp lệ!");
+          }
+        } catch (err) {
+          setAlertDialog("Lỗi đọc file JSON. Vui lòng kiểm tra lại định dạng.");
+        }
+        if(jsonFileInputRef.current) jsonFileInputRef.current.value = '';
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  // Logic Trò chơi
+  const shuffleBalls = () => {
+    let shuffled = [...balls];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    setBalls(shuffled);
+  };
+
+  const handleBallClick = (ballId: number) => {
+    initAudio(); // Init audio on first interaction
+    if (!answeredBalls.includes(ballId)) {
+      setActiveQuestionId(ballId);
+      setAnsweringStudentId(students.length > 0 ? students[0].id : '');
+    }
+  };
+
+  const submitAnswer = (optionIndex: number) => {
+    const question = questions.find(q => q.id === activeQuestionId);
+    if (!question) return;
+
+    if (!answeringStudentId) {
+        setAlertDialog("Vui lòng chọn học sinh trả lời!");
+        return;
+    }
+
+    if (question.correctIndex === optionIndex) {
+      sounds.correct();
+      updateStudentScore(answeringStudentId, 10); // CỘNG 10 ĐIỂM
+    } else {
+      sounds.wrong();
+    }
+    
+    setAnsweredBalls([...answeredBalls, activeQuestionId!]);
+    setActiveQuestionId(null);
+  };
+
+  const resetGame = () => {
+    setConfirmDialog({
+        message: "Bạn có chắc muốn làm mới lại bảng (khôi phục các câu hỏi đã trả lời)?",
+        onConfirm: () => {
+            setAnsweredBalls([]);
+            setConfirmDialog(null);
+        }
+    });
+  };
+
+  const resetScores = () => {
+    setConfirmDialog({
+        message: `Làm mới toàn bộ điểm học sinh lớp ${currentClass} về 0?`,
+        onConfirm: () => {
+            setClassesData(prev => ({
+                ...prev,
+                [currentClass]: prev[currentClass].map(s => ({...s, score: 0}))
+            }));
+            setConfirmDialog(null);
+        }
+    });
+  };
+
+  // Tính Top 3 & Phân trang
+  const top3Students = [...students].sort((a, b) => b.score - a.score).slice(0, 3);
+  const filteredStudents = students.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const totalPages = Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE) || 1;
+  const displayedStudents = filteredStudents.slice((currentPage - 1) * STUDENTS_PER_PAGE, currentPage * STUDENTS_PER_PAGE);
+
+  return (
+    <div className="flex h-screen bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0] font-sans overflow-hidden text-gray-800">
+      
+      {/* CỘT TRÁI: DANH SÁCH HỌC SINH */}
+      <div className="w-[320px] h-full flex-shrink-0 p-4 z-10 relative flex flex-col">
+        {/* Background hình bảng gỗ */}
+        <div className="flex-1 bg-[#f4e6c3] rounded-3xl border-[10px] border-[#c18c5d] shadow-2xl flex flex-col overflow-hidden relative">
+          
+          {/* Class Header */}
+          <div className="bg-[#fff3d4] p-4 flex flex-col items-center border-b border-[#e6d0a7] relative">
+             <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-20 h-6 bg-red-500 rounded-b-xl flex justify-center items-center shadow-md">
+                 <div className="w-12 h-1.5 bg-red-800 rounded-full opacity-50"></div>
+             </div>
+             
+             <div className="mt-4 flex flex-col w-full gap-3">
+                <div className="flex items-center justify-between bg-white px-4 py-2 rounded-xl font-bold text-sm text-red-600 shadow-sm border border-orange-200">
+                  <span>LỚP:</span>
+                  <select 
+                    value={currentClass} 
+                    onChange={(e) => setCurrentClass(e.target.value)}
+                    className="w-28 outline-none text-right bg-transparent text-gray-800 cursor-pointer"
+                  >
+                    {Object.keys(classesData).map(cls => (
+                      <option key={cls} value={cls}>{cls}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="flex gap-2">
+                  <input 
+                    type="text"
+                    placeholder="Tên lớp mới..."
+                    className="flex-1 rounded-xl px-3 py-2 text-sm outline-none border border-gray-300 shadow-inner focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all"
+                    value={newClassName}
+                    onChange={(e) => setNewClassName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newClassName.trim() && !classesData[newClassName.trim()]) {
+                        setClassesData(prev => ({...prev, [newClassName.trim()]: []}));
+                        setCurrentClass(newClassName.trim());
+                        setNewClassName('');
+                      }
+                    }}
+                  />
+                  <button 
+                    onClick={() => {
+                      if(newClassName.trim() && !classesData[newClassName.trim()]) {
+                        setClassesData(prev => ({...prev, [newClassName.trim()]: []}));
+                        setCurrentClass(newClassName.trim());
+                        setNewClassName('');
+                      }
+                    }}
+                    className="bg-green-500 text-white px-3 rounded-xl text-sm font-bold shadow-md hover:bg-green-600 active:scale-95 transition-all flex items-center justify-center"
+                    title="Thêm lớp mới"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
+             </div>
+          </div>
+
+          {/* Add, Search and Import/Export */}
+          <div className="p-3 flex flex-col gap-3 border-b border-orange-200 bg-[#fdf8ed]">
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                placeholder="Thêm học sinh..." 
+                className="flex-1 rounded-xl px-3 py-2 text-sm outline-none border border-gray-300 shadow-inner focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all"
+                value={newStudentName}
+                onChange={(e) => setNewStudentName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addStudent()}
+              />
+              <button 
+                onClick={addStudent}
+                className="bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:bg-blue-600 active:scale-95 transition-all"
+              >
+                Thêm
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-2">
+              <button onClick={() => setShowImportListModal(true)} className="flex flex-col items-center justify-center gap-1 bg-teal-500 text-white py-2 rounded-xl text-[10px] font-bold shadow-sm hover:bg-teal-600 hover:shadow-md transition-all active:scale-95">
+                <FileText size={14} /> Nhập DS
+              </button>
+              <button onClick={() => jsonFileInputRef.current?.click()} className="flex flex-col items-center justify-center gap-1 bg-indigo-500 text-white py-2 rounded-xl text-[10px] font-bold shadow-sm hover:bg-indigo-600 hover:shadow-md transition-all active:scale-95">
+                <Upload size={14} /> Nhập JSON
+              </button>
+              <button onClick={exportJSON} className="flex flex-col items-center justify-center gap-1 bg-amber-600 text-white py-2 rounded-xl text-[10px] font-bold shadow-sm hover:bg-amber-700 hover:shadow-md transition-all active:scale-95">
+                <Download size={14} /> Xuất JSON
+              </button>
+              <input type="file" accept=".json" className="hidden" ref={jsonFileInputRef} onChange={importJSON} />
+            </div>
+
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input 
+                type="text" 
+                placeholder="Tìm tên học sinh..." 
+                className="w-full rounded-xl pl-9 pr-3 py-2 text-sm outline-none border border-gray-300 shadow-inner focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Student List */}
+          <div className="flex-1 overflow-y-auto px-2 py-1 custom-scrollbar">
+            {displayedStudents.length === 0 ? (
+               <div className="text-center text-gray-400 text-sm mt-6 flex flex-col items-center gap-2">
+                 <Search size={24} className="opacity-50" />
+                 Không tìm thấy học sinh
+               </div>
+            ) : (
+              displayedStudents.map(student => (
+                <div key={student.id} className="flex justify-between items-center py-2.5 px-2 border-b border-orange-200/50 group hover:bg-orange-50/50 rounded-lg transition-colors">
+                  <span className="font-semibold text-gray-700 truncate flex-1" title={student.name}>
+                    {student.name}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md min-w-[2.5rem] text-center">
+                      {student.score}
+                    </span>
+                    <button 
+                      onClick={() => removeStudent(student.id)}
+                      className="text-red-400 opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-600 p-1 hover:bg-red-50 rounded-md"
+                      title="Xóa học sinh"
+                    >
+                      <X size={16} strokeWidth={2.5} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="p-3 flex justify-center items-center gap-4 bg-[#fdf8ed] border-t border-orange-200">
+               <button 
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-full hover:bg-gray-200 disabled:opacity-30 transition-colors"
+               >
+                  <ChevronLeft size={18} />
+               </button>
+               <span className="text-sm font-bold text-gray-600 bg-white px-3 py-1 rounded-full shadow-sm border border-gray-200">
+                 {currentPage} / {totalPages}
+               </span>
+               <button 
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 rounded-full hover:bg-gray-200 disabled:opacity-30 transition-colors"
+               >
+                  <ChevronRight size={18} />
+               </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* PHẦN GIỮA: MÀN HÌNH CHÍNH */}
+      <div className="flex-1 flex flex-col p-4 relative h-full overflow-hidden">
+        
+        {/* Header Control */}
+        <div className="flex flex-wrap justify-between items-start mb-4 pt-2 pl-4 gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-16 h-16 bg-white rounded-2xl shadow-lg flex items-center justify-center p-2 border border-gray-100">
+                <img 
+                  src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/React-icon.svg/1200px-React-icon.svg.png" 
+                  alt="Logo" 
+                  className="w-full h-full object-contain animate-[spin_10s_linear_infinite]"
+                  onError={(e) => (e.currentTarget.style.display = 'none')}
+                />
+              </div>
+              <h1 className="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-700 to-blue-600 tracking-tight drop-shadow-sm">
+                GAMES LEO NÚI OLYMPIA
+              </h1>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-3 text-sm font-medium bg-white/50 p-2 rounded-2xl backdrop-blur-sm border border-white/40 shadow-sm inline-flex">
+              <span className="text-gray-700 ml-2">Thời gian (giây):</span>
+              <input 
+                type="number" 
+                value={timerInput}
+                onChange={(e) => setTimerInput(Number(e.target.value))}
+                className="w-16 px-2 py-1.5 rounded-lg outline-none text-center shadow-inner border border-gray-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                min="1"
+              />
+              <button 
+                onClick={startTimer}
+                className="bg-blue-500 text-white px-4 py-1.5 rounded-lg shadow-md hover:bg-blue-600 hover:shadow-lg active:scale-95 transition-all font-semibold"
+              >
+                Bắt đầu
+              </button>
+              {isTimerRunning && (
+                  <span className="text-2xl font-black text-red-600 animate-pulse ml-2 min-w-[3rem] text-center drop-shadow-md">
+                      {timeLeft}s
+                  </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2 mt-4">
+              <button onClick={resetGame} className="bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-blue-600 hover:shadow-lg active:scale-95 transition-all">
+                Reset câu hỏi
+              </button>
+              <button onClick={resetScores} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-red-600 hover:shadow-lg active:scale-95 transition-all">
+                Reset Bảng Điểm
+              </button>
+              <button onClick={shuffleBalls} className="bg-green-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-green-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
+                <Shuffle size={16}/> Trộn Bóng
+              </button>
+              <button onClick={() => setShowAdmin(true)} className="bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-purple-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
+                <Settings size={16}/> Quản lý Câu hỏi
+              </button>
+              <button onClick={toggleBGM} className={`px-4 py-2 rounded-xl text-sm font-semibold shadow-md active:scale-95 transition-all flex items-center gap-2 ${bgmPlaying ? 'bg-yellow-500 hover:bg-yellow-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}>
+                {bgmPlaying ? <Volume2 size={16}/> : <VolumeX size={16}/>} Nhạc Nền
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Bảng 60 Viên cầu */}
+        <div className="flex-1 flex items-center justify-center pr-0 lg:pr-64 pb-4 overflow-y-auto custom-scrollbar">
+          <div className="grid grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3 md:gap-4 max-w-5xl p-4">
+            {balls.map((ballId) => {
+              const isAnswered = answeredBalls.includes(ballId);
+              return (
+                <div 
+                  key={ballId}
+                  onMouseEnter={() => !isAnswered && sounds.hover()}
+                  onClick={() => handleBallClick(ballId)}
+                  className={`
+                    relative w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center
+                    cursor-pointer transition-all duration-300 border-2 shadow-md
+                    ${isAnswered 
+                      ? 'bg-gray-200 border-gray-300 grayscale opacity-50 scale-95 pointer-events-none' 
+                      : 'bg-gradient-to-br from-white to-pink-50 border-pink-300 hover:scale-110 hover:shadow-xl hover:border-pink-400'
+                    }
+                  `}
+                >
+                  {/* Ảnh Pokemon */}
+                  <img 
+                    src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${ballId}.png`} 
+                    alt={`Pokemon ${ballId}`} 
+                    className="w-8 h-8 md:w-12 md:h-12 object-contain drop-shadow-sm transition-transform duration-300 hover:rotate-12"
+                    loading="lazy"
+                  />
+                  {/* Badge Số Câu Hỏi */}
+                  <div className={`
+                    absolute -top-1 -right-1 w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold text-white shadow-sm border-2 border-white
+                    ${isAnswered ? 'bg-gray-500' : 'bg-red-500'}
+                  `}>
+                    {ballId}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* BẢNG XẾP HẠNG TOP 3 (Absolute Right on Large Screens, Hidden/Bottom on Small) */}
+        <div className="hidden lg:block absolute top-6 right-6 w-64 bg-gradient-to-b from-[#6e3b1c] to-[#5a2e12] rounded-3xl shadow-2xl overflow-hidden border-4 border-[#8b4513] z-20 transform transition-transform hover:scale-105">
+            <div className="bg-gradient-to-r from-[#ffae00] to-[#ff8c00] text-amber-900 font-black text-center py-3 flex items-center justify-center gap-2 shadow-inner">
+                <Trophy size={22} className="drop-shadow-sm" /> BẢNG VÀNG TOP 3
+            </div>
+            <div className="flex justify-center -mt-4 relative z-10 drop-shadow-lg">
+                <Star size={40} fill="#FFD700" color="#B8860B" className="transform -rotate-12" />
+                <Star size={52} fill="#FFD700" color="#B8860B" className="-mt-5 mx-1 z-10" />
+                <Star size={40} fill="#FFD700" color="#B8860B" className="transform rotate-12" />
+            </div>
+            <div className="p-5 pt-3 text-white font-medium flex flex-col gap-3">
+                {top3Students.length === 0 ? (
+                    <div className="text-center text-amber-200/50 text-sm py-4 italic">Chưa có dữ liệu thi đấu</div>
+                ) : (
+                    top3Students.map((student, idx) => (
+                        <div key={student.id} className="flex justify-between items-center border-b border-[#8b4513]/50 pb-2 last:border-0">
+                            <span className="truncate w-36 flex items-center gap-2">
+                                <span className={`
+                                  flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
+                                  ${idx === 0 ? 'bg-yellow-400 text-yellow-900' : idx === 1 ? 'bg-gray-300 text-gray-800' : 'bg-amber-600 text-amber-100'}
+                                `}>
+                                  {idx + 1}
+                                </span>
+                                {student.name}
+                            </span>
+                            <span className="text-yellow-400 font-black text-lg drop-shadow-md">{student.score}</span>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+
+      </div>
+
+      {/* --- MODAL NHẬP DANH SÁCH --- */}
+      {showImportListModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="bg-gradient-to-r from-teal-500 to-teal-600 text-white p-5 flex justify-between items-center">
+              <h2 className="text-xl font-bold flex items-center gap-2"><FileText /> Nhập Danh Sách Học Sinh</h2>
+              <button onClick={() => setShowImportListModal(false)} className="hover:text-teal-200 transition-colors bg-white/10 p-1 rounded-full"><X size={24} /></button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-600 mb-4 bg-teal-50 p-3 rounded-xl border border-teal-100">
+                Bạn có thể <b>Copy danh sách từ Excel, Word</b> (chỉ quét cột chứa tên học sinh) và <b>Dán</b> vào ô bên dưới, mỗi tên sẽ nằm trên 1 dòng.
+              </p>
+              
+              <div className="mb-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Hoặc tải lên từ File (.txt, .csv):</label>
+                <input type="file" accept=".txt,.csv" onChange={handleTextFileImport} className="text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-100 file:text-teal-700 hover:file:bg-teal-200 transition-colors cursor-pointer" />
+              </div>
+
+              <textarea
+                className="w-full h-48 border-2 border-gray-200 rounded-xl p-4 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 resize-none shadow-inner transition-all"
+                placeholder="Ví dụ:&#10;Nguyễn Văn A&#10;Trần Thị B&#10;Lê Văn C..."
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+              ></textarea>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button onClick={() => setShowImportListModal(false)} className="px-5 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 font-semibold text-gray-700 transition-colors">Hủy</button>
+                <button onClick={handleImportListSubmit} className="px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-600 font-semibold text-white shadow-md hover:shadow-lg transition-all active:scale-95">Lưu vào Lớp {currentClass}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL TRẢ LỜI CÂU HỎI --- */}
+      {activeQuestionId && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in duration-300 transform">
+            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-5 flex justify-between items-center shadow-md relative z-10">
+              <h2 className="text-2xl font-black tracking-wide flex items-center gap-2">
+                <span className="bg-white/20 px-3 py-1 rounded-lg">Câu hỏi số {activeQuestionId}</span>
+              </h2>
+              <button onClick={() => setActiveQuestionId(null)} className="hover:bg-white/20 p-2 rounded-full transition-colors"><X size={24} /></button>
+            </div>
+            
+            <div className="p-8 bg-gray-50/50">
+              <div className="text-2xl mb-8 text-center font-bold text-gray-800 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 min-h-[120px] flex items-center justify-center">
+                {questions.find(q => q.id === activeQuestionId)?.text}
+              </div>
+
+              <div className="mb-8 flex justify-center items-center gap-4 bg-purple-50 p-4 rounded-2xl border border-purple-100">
+                  <span className="font-bold text-purple-800">Học sinh trả lời:</span>
+                  <select 
+                      value={answeringStudentId} 
+                      onChange={(e) => setAnsweringStudentId(e.target.value)}
+                      className="border-2 border-purple-300 rounded-xl p-2.5 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 font-semibold text-gray-700 min-w-[250px] bg-white shadow-sm transition-all cursor-pointer"
+                  >
+                      <option value="" disabled>-- Chọn học sinh --</option>
+                      {students.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.score} điểm)</option>
+                      ))}
+                  </select>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {questions.find(q => q.id === activeQuestionId)?.options.map((opt, idx) => (
+                  <button 
+                    key={idx}
+                    onClick={() => submitAnswer(idx)}
+                    className="group relative p-5 rounded-2xl border-2 border-gray-200 bg-white hover:border-purple-500 hover:bg-purple-50 hover:shadow-md transition-all text-left text-lg font-medium overflow-hidden active:scale-[0.98]"
+                  >
+                    <div className="absolute inset-0 bg-purple-100 opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                    <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 group-hover:bg-purple-200 text-gray-600 group-hover:text-purple-700 font-black mr-3 transition-colors">
+                      {String.fromCharCode(65 + idx)}
+                    </span> 
+                    <span className="text-gray-700 group-hover:text-purple-900 transition-colors">{opt}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL QUẢN LÝ CÂU HỎI (ADMIN) --- */}
+      {showAdmin && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 md:p-6">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-5 border-b flex justify-between items-center bg-gradient-to-r from-gray-50 to-gray-100">
+              <h2 className="text-2xl font-black text-gray-800 flex items-center gap-3">
+                <Settings className="text-purple-600" /> Quản lý Ngân hàng Câu hỏi (60 Câu)
+              </h2>
+              <button onClick={() => setShowAdmin(false)} className="text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full p-2 transition-colors">
+                <X size={28} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-gray-100/50">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {questions.map((q, qIndex) => (
+                  <div key={q.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                    <div className="font-black text-lg mb-3 text-purple-700 flex items-center gap-2 border-b pb-2">
+                      <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded-md text-sm">#{q.id}</span>
+                      Viên cầu số {q.id}
+                    </div>
+                    <textarea 
+                      className="w-full border border-gray-300 rounded-xl p-3 text-sm mb-4 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 resize-none transition-all"
+                      rows={3}
+                      value={q.text}
+                      onChange={(e) => {
+                        const newQ = [...questions];
+                        newQ[qIndex].text = e.target.value;
+                        setQuestions(newQ);
+                      }}
+                      placeholder="Nhập nội dung câu hỏi..."
+                    />
+                    <div className="space-y-2">
+                      {q.options.map((opt, optIndex) => (
+                         <div key={optIndex} className={`flex items-center gap-3 p-2 rounded-lg border transition-colors ${q.correctIndex === optIndex ? 'bg-green-50 border-green-200' : 'border-transparent hover:bg-gray-50'}`}>
+                            <input 
+                              type="radio" 
+                              name={`correct-${q.id}`} 
+                              checked={q.correctIndex === optIndex}
+                              onChange={() => {
+                                const newQ = [...questions];
+                                newQ[qIndex].correctIndex = optIndex;
+                                setQuestions(newQ);
+                              }}
+                              className="w-5 h-5 cursor-pointer text-green-600 focus:ring-green-500"
+                              title="Đánh dấu là đáp án đúng"
+                            />
+                            <span className="font-bold text-gray-500 w-6">{String.fromCharCode(65 + optIndex)}.</span>
+                            <input 
+                              type="text" 
+                              value={opt}
+                              onChange={(e) => {
+                                const newQ = [...questions];
+                                newQ[qIndex].options[optIndex] = e.target.value;
+                                setQuestions(newQ);
+                              }}
+                              className={`flex-1 bg-transparent border-b border-gray-200 p-1 text-sm outline-none focus:border-purple-500 transition-colors ${q.correctIndex === optIndex ? 'font-semibold text-green-800' : 'text-gray-700'}`}
+                              placeholder={`Nhập đáp án ${String.fromCharCode(65 + optIndex)}`}
+                            />
+                         </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- CONFIRM DIALOG --- */}
+      {confirmDialog && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center animate-in fade-in zoom-in duration-200">
+            <div className="w-16 h-16 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Settings size={32} />
+            </div>
+            <h3 className="text-xl font-bold mb-2 text-gray-800">Xác nhận</h3>
+            <p className="text-gray-600 mb-8">{confirmDialog.message}</p>
+            <div className="flex justify-center gap-3">
+              <button onClick={() => setConfirmDialog(null)} className="flex-1 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 font-semibold text-gray-700 transition-colors">Hủy</button>
+              <button onClick={confirmDialog.onConfirm} className="flex-1 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 font-semibold text-white shadow-md transition-colors">Đồng ý</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- ALERT DIALOG --- */}
+      {alertDialog && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center animate-in fade-in zoom-in duration-200">
+             <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FileText size={32} />
+            </div>
+            <h3 className="text-xl font-bold mb-2 text-gray-800">Thông báo</h3>
+            <p className="text-gray-600 mb-8">{alertDialog}</p>
+            <div className="flex justify-center">
+              <button onClick={() => setAlertDialog('')} className="w-full py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 font-semibold text-white shadow-md transition-colors">Đã hiểu</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Styles phụ trợ */}
+      <style dangerouslySetInnerHTML={{__html: `
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: rgba(0,0,0,0.15);
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background-color: rgba(0,0,0,0.25);
+        }
+      `}} />
+    </div>
+  );
+}
