@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload } from 'lucide-react';
+import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun } from 'lucide-react';
 
 // --- TRÌNH TẠO ÂM THANH (WEB AUDIO API) ---
 // Lazy init để tránh lỗi autoplay của trình duyệt
@@ -110,6 +110,15 @@ export default function App() {
   const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
   const [answeringStudentId, setAnsweringStudentId] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
 
   // States: Custom Alert & Confirm Modals
   const [confirmDialog, setConfirmDialog] = useState<{message: string, onConfirm: () => void} | null>(null);
@@ -325,26 +334,26 @@ export default function App() {
   const displayedStudents = filteredStudents.slice((currentPage - 1) * STUDENTS_PER_PAGE, currentPage * STUDENTS_PER_PAGE);
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0] font-sans overflow-hidden text-gray-800">
+    <div className={`flex h-screen font-sans overflow-hidden transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0] text-gray-800'}`}>
       
       {/* CỘT TRÁI: DANH SÁCH HỌC SINH */}
       <div className="w-[320px] h-full flex-shrink-0 p-4 z-10 relative flex flex-col">
         {/* Background hình bảng gỗ */}
-        <div className="flex-1 bg-[#f4e6c3] rounded-3xl border-[10px] border-[#c18c5d] shadow-2xl flex flex-col overflow-hidden relative">
+        <div className={`flex-1 rounded-3xl border-[10px] shadow-2xl flex flex-col overflow-hidden relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#f4e6c3] border-[#c18c5d]'}`}>
           
           {/* Class Header */}
-          <div className="bg-[#fff3d4] p-4 flex flex-col items-center border-b border-[#e6d0a7] relative">
+          <div className={`p-4 flex flex-col items-center border-b relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-[#fff3d4] border-[#e6d0a7]'}`}>
              <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-20 h-6 bg-red-500 rounded-b-xl flex justify-center items-center shadow-md">
                  <div className="w-12 h-1.5 bg-red-800 rounded-full opacity-50"></div>
              </div>
              
              <div className="mt-4 flex flex-col w-full gap-3">
-                <div className="flex items-center justify-between bg-white px-4 py-2 rounded-xl font-bold text-sm text-red-600 shadow-sm border border-orange-200">
+                <div className={`flex items-center justify-between px-4 py-2 rounded-xl font-bold text-sm shadow-sm border transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-red-400 border-gray-600' : 'bg-white text-red-600 border-orange-200'}`}>
                   <span>LỚP:</span>
                   <select 
                     value={currentClass} 
                     onChange={(e) => setCurrentClass(e.target.value)}
-                    className="w-28 outline-none text-right bg-transparent text-gray-800 cursor-pointer"
+                    className={`w-28 outline-none text-right bg-transparent cursor-pointer ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}
                   >
                     {Object.keys(classesData).map(cls => (
                       <option key={cls} value={cls}>{cls}</option>
@@ -356,7 +365,7 @@ export default function App() {
                   <input 
                     type="text"
                     placeholder="Tên lớp mới..."
-                    className="flex-1 rounded-xl px-3 py-2 text-sm outline-none border border-gray-300 shadow-inner focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all"
+                    className={`flex-1 rounded-xl px-3 py-2 text-sm outline-none border shadow-inner focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all ${isDarkMode ? 'border-gray-600 bg-gray-700 text-gray-100' : 'border-gray-300'}`}
                     value={newClassName}
                     onChange={(e) => setNewClassName(e.target.value)}
                     onKeyDown={(e) => {
@@ -385,12 +394,12 @@ export default function App() {
           </div>
 
           {/* Add, Search and Import/Export */}
-          <div className="p-3 flex flex-col gap-3 border-b border-orange-200 bg-[#fdf8ed]">
+          <div className={`p-3 flex flex-col gap-3 border-b transition-colors duration-300 ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-orange-200 bg-[#fdf8ed]'}`}>
             <div className="flex gap-2">
               <input 
                 type="text" 
                 placeholder="Thêm học sinh..." 
-                className="flex-1 rounded-xl px-3 py-2 text-sm outline-none border border-gray-300 shadow-inner focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all"
+                className={`flex-1 rounded-xl px-3 py-2 text-sm outline-none border shadow-inner focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all ${isDarkMode ? 'border-gray-600 bg-gray-700 text-gray-100' : 'border-gray-300'}`}
                 value={newStudentName}
                 onChange={(e) => setNewStudentName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addStudent()}
@@ -421,7 +430,7 @@ export default function App() {
               <input 
                 type="text" 
                 placeholder="Tìm tên học sinh..." 
-                className="w-full rounded-xl pl-9 pr-3 py-2 text-sm outline-none border border-gray-300 shadow-inner focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all"
+                className={`w-full rounded-xl pl-9 pr-3 py-2 text-sm outline-none border shadow-inner focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all ${isDarkMode ? 'border-gray-600 bg-gray-700 text-gray-100' : 'border-gray-300'}`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -437,12 +446,12 @@ export default function App() {
                </div>
             ) : (
               displayedStudents.map(student => (
-                <div key={student.id} className="flex justify-between items-center py-2.5 px-2 border-b border-orange-200/50 group hover:bg-orange-50/50 rounded-lg transition-colors">
-                  <span className="font-semibold text-gray-700 truncate flex-1" title={student.name}>
+                <div key={student.id} className={`flex justify-between items-center py-2.5 px-2 border-b group rounded-lg transition-colors ${isDarkMode ? 'border-gray-700/50 hover:bg-gray-700/50' : 'border-orange-200/50 hover:bg-orange-50/50'}`}>
+                  <span className={`font-semibold truncate flex-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`} title={student.name}>
                     {student.name}
                   </span>
                   <div className="flex items-center gap-3">
-                    <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md min-w-[2.5rem] text-center">
+                    <span className={`font-bold px-2 py-0.5 rounded-md min-w-[2.5rem] text-center ${isDarkMode ? 'text-blue-400 bg-blue-900/30' : 'text-blue-600 bg-blue-50'}`}>
                       {student.score}
                     </span>
                     <button 
@@ -460,21 +469,21 @@ export default function App() {
 
           {/* Pagination Controls */}
           {totalPages > 1 && (
-            <div className="p-3 flex justify-center items-center gap-4 bg-[#fdf8ed] border-t border-orange-200">
+            <div className={`p-3 flex justify-center items-center gap-4 border-t transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#fdf8ed] border-orange-200'}`}>
                <button 
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="p-1.5 rounded-full hover:bg-gray-200 disabled:opacity-30 transition-colors"
+                  className={`p-1.5 rounded-full disabled:opacity-30 transition-colors ${isDarkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-200'}`}
                >
                   <ChevronLeft size={18} />
                </button>
-               <span className="text-sm font-bold text-gray-600 bg-white px-3 py-1 rounded-full shadow-sm border border-gray-200">
+               <span className={`text-sm font-bold px-3 py-1 rounded-full shadow-sm border ${isDarkMode ? 'text-gray-300 bg-gray-700 border-gray-600' : 'text-gray-600 bg-white border-gray-200'}`}>
                  {currentPage} / {totalPages}
                </span>
                <button 
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="p-1.5 rounded-full hover:bg-gray-200 disabled:opacity-30 transition-colors"
+                  className={`p-1.5 rounded-full disabled:opacity-30 transition-colors ${isDarkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-200'}`}
                >
                   <ChevronRight size={18} />
                </button>
@@ -503,13 +512,13 @@ export default function App() {
               </h1>
             </div>
             
-            <div className="flex flex-wrap items-center gap-3 text-sm font-medium bg-white/50 p-2 rounded-2xl backdrop-blur-sm border border-white/40 shadow-sm inline-flex">
-              <span className="text-gray-700 ml-2">Thời gian (giây):</span>
+            <div className={`flex flex-wrap items-center gap-3 text-sm font-medium p-2 rounded-2xl backdrop-blur-sm border shadow-sm inline-flex transition-colors duration-300 ${isDarkMode ? 'bg-gray-800/50 border-gray-700/40' : 'bg-white/50 border-white/40'}`}>
+              <span className={`ml-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Thời gian (giây):</span>
               <input 
                 type="number" 
                 value={timerInput}
                 onChange={(e) => setTimerInput(Number(e.target.value))}
-                className="w-16 px-2 py-1.5 rounded-lg outline-none text-center shadow-inner border border-gray-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className={`w-16 px-2 py-1.5 rounded-lg outline-none text-center shadow-inner border focus:border-blue-400 focus:ring-1 focus:ring-blue-400 ${isDarkMode ? 'border-gray-600 bg-gray-700 text-gray-100' : 'border-gray-200'}`}
                 min="1"
               />
               <button 
@@ -538,8 +547,11 @@ export default function App() {
               <button onClick={() => setShowAdmin(true)} className="bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-purple-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
                 <Settings size={16}/> Quản lý Câu hỏi
               </button>
-              <button onClick={toggleBGM} className={`px-4 py-2 rounded-xl text-sm font-semibold shadow-md active:scale-95 transition-all flex items-center gap-2 ${bgmPlaying ? 'bg-yellow-500 hover:bg-yellow-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}>
+              <button onClick={toggleBGM} className={`px-4 py-2 rounded-xl text-sm font-semibold shadow-md active:scale-95 transition-all flex items-center gap-2 ${bgmPlaying ? 'bg-yellow-500 hover:bg-yellow-600 text-white' : (isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700')}`}>
                 {bgmPlaying ? <Volume2 size={16}/> : <VolumeX size={16}/>} Nhạc Nền
+              </button>
+              <button onClick={() => setIsDarkMode(!isDarkMode)} className={`px-4 py-2 rounded-xl text-sm font-semibold shadow-md active:scale-95 transition-all flex items-center gap-2 ${isDarkMode ? 'bg-yellow-400 hover:bg-yellow-500 text-gray-900' : 'bg-gray-800 hover:bg-gray-700 text-white'}`}>
+                {isDarkMode ? <Sun size={16}/> : <Moon size={16}/>} {isDarkMode ? 'Sáng' : 'Tối'}
               </button>
             </div>
           </div>
@@ -559,8 +571,8 @@ export default function App() {
                     relative w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center
                     cursor-pointer transition-all duration-300 border-2 shadow-md
                     ${isAnswered 
-                      ? 'bg-gray-200 border-gray-300 grayscale opacity-50 scale-95 pointer-events-none' 
-                      : 'bg-gradient-to-br from-white to-pink-50 border-pink-300 hover:scale-110 hover:shadow-xl hover:border-pink-400'
+                      ? (isDarkMode ? 'bg-gray-700 border-gray-600 grayscale opacity-50 scale-95 pointer-events-none' : 'bg-gray-200 border-gray-300 grayscale opacity-50 scale-95 pointer-events-none')
+                      : (isDarkMode ? 'bg-gradient-to-br from-gray-800 to-gray-700 border-gray-600 hover:scale-110 hover:shadow-xl hover:border-gray-500' : 'bg-gradient-to-br from-white to-pink-50 border-pink-300 hover:scale-110 hover:shadow-xl hover:border-pink-400')
                     }
                   `}
                 >
