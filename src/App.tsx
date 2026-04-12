@@ -64,6 +64,12 @@ interface TFQuestion {
   isTrue: boolean;
 }
 
+interface SAQuestion {
+  id: number;
+  text: string;
+  correctAnswer: string;
+}
+
 interface Student {
   id: string;
   name: string;
@@ -77,10 +83,16 @@ const initialQuestions: Question[] = Array.from({ length: 60 }, (_, i) => ({
   correctIndex: 0
 }));
 
-const initialTFQuestions: TFQuestion[] = Array.from({ length: 30 }, (_, i) => ({
+const initialTFQuestions: TFQuestion[] = Array.from({ length: 60 }, (_, i) => ({
   id: i + 1,
   text: `Câu hỏi Đúng/Sai số ${i + 1}: Mệnh đề này là đúng hay sai?`,
   isTrue: true
+}));
+
+const initialSAQuestions: SAQuestion[] = Array.from({ length: 60 }, (_, i) => ({
+  id: i + 1,
+  text: `Câu hỏi Trả lời ngắn số ${i + 1}: ...`,
+  correctAnswer: 'Đáp án'
 }));
 
 export default function App() {
@@ -114,8 +126,13 @@ export default function App() {
 
   // States: Bảng câu hỏi Đúng/Sai
   const [tfQuestions, setTfQuestions] = useState<TFQuestion[]>(initialTFQuestions);
-  const [tfBalls, setTfBalls] = useState<number[]>(Array.from({ length: 30 }, (_, i) => i + 1));
+  const [tfBalls, setTfBalls] = useState<number[]>(Array.from({ length: 60 }, (_, i) => i + 1));
   const [answeredTFBalls, setAnsweredTFBalls] = useState<number[]>([]);
+
+  // States: Bảng câu hỏi Trả lời ngắn
+  const [saQuestions, setSaQuestions] = useState<SAQuestion[]>(initialSAQuestions);
+  const [saBalls, setSaBalls] = useState<number[]>(Array.from({ length: 60 }, (_, i) => i + 1));
+  const [answeredSABalls, setAnsweredSABalls] = useState<number[]>([]);
   
   // States: Timer
   const [timerInput, setTimerInput] = useState(10);
@@ -126,6 +143,8 @@ export default function App() {
   const [bgmPlaying, setBgmPlaying] = useState(false);
   const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
   const [activeTFQuestionId, setActiveTFQuestionId] = useState<number | null>(null);
+  const [activeSAQuestionId, setActiveSAQuestionId] = useState<number | null>(null);
+  const [studentSAInput, setStudentSAInput] = useState('');
   const [answeringStudentId, setAnsweringStudentId] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -303,6 +322,15 @@ export default function App() {
     setTfBalls(shuffled);
   };
 
+  const shuffleSABalls = () => {
+    let shuffled = [...saBalls];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    setSaBalls(shuffled);
+  };
+
   const handleBallClick = (ballId: number) => {
     initAudio(); // Init audio on first interaction
     if (!answeredBalls.includes(ballId)) {
@@ -316,6 +344,15 @@ export default function App() {
     if (!answeredTFBalls.includes(ballId)) {
       setActiveTFQuestionId(ballId);
       setAnsweringStudentId(students.length > 0 ? students[0].id : '');
+    }
+  };
+
+  const handleSABallClick = (ballId: number) => {
+    initAudio();
+    if (!answeredSABalls.includes(ballId)) {
+      setActiveSAQuestionId(ballId);
+      setAnsweringStudentId(students.length > 0 ? students[0].id : '');
+      setStudentSAInput('');
     }
   };
 
@@ -359,12 +396,40 @@ export default function App() {
     setActiveTFQuestionId(null);
   };
 
+  const submitSAAnswer = () => {
+    const question = saQuestions.find(q => q.id === activeSAQuestionId);
+    if (!question) return;
+
+    if (!answeringStudentId) {
+        setAlertDialog("Vui lòng chọn học sinh trả lời!");
+        return;
+    }
+
+    if (!studentSAInput.trim()) {
+        setAlertDialog("Vui lòng nhập câu trả lời!");
+        return;
+    }
+
+    const isCorrect = studentSAInput.trim().toLowerCase() === question.correctAnswer.trim().toLowerCase();
+
+    if (isCorrect) {
+      sounds.correct();
+      updateStudentScore(answeringStudentId, 10); // CỘNG 10 ĐIỂM
+    } else {
+      sounds.wrong();
+    }
+    
+    setAnsweredSABalls([...answeredSABalls, activeSAQuestionId!]);
+    setActiveSAQuestionId(null);
+  };
+
   const resetGame = () => {
     setConfirmDialog({
         message: "Bạn có chắc muốn làm mới lại bảng (khôi phục các câu hỏi đã trả lời)?",
         onConfirm: () => {
             setAnsweredBalls([]);
             setAnsweredTFBalls([]);
+            setAnsweredSABalls([]);
             setConfirmDialog(null);
         }
     });
@@ -597,7 +662,7 @@ export default function App() {
               <button onClick={resetScores} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-red-600 hover:shadow-lg active:scale-95 transition-all">
                 Reset Bảng Điểm
               </button>
-              <button onClick={() => { shuffleBalls(); shuffleTFBalls(); }} className="bg-green-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-green-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
+              <button onClick={() => { shuffleBalls(); shuffleTFBalls(); shuffleSABalls(); }} className="bg-green-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-green-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
                 <Shuffle size={16}/> Trộn Bóng
               </button>
               <button onClick={() => setShowAdmin(true)} className="bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-purple-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
@@ -657,7 +722,7 @@ export default function App() {
           </div>
 
           <div className={`w-full max-w-5xl mt-8 mb-4 px-4 py-2 rounded-xl shadow-sm border text-center font-bold text-lg tracking-wide ${isDarkMode ? 'bg-gray-800 border-gray-700 text-teal-400' : 'bg-white/80 border-white text-teal-800'}`}>
-            BÀI TẬP 2: ĐÚNG / SAI (30 CÂU)
+            BÀI TẬP 2: ĐÚNG / SAI (60 CÂU)
           </div>
 
           <div className="grid grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3 md:gap-4 max-w-5xl p-4 mb-8">
@@ -688,6 +753,46 @@ export default function App() {
                   <div className={`
                     absolute -top-1 -right-1 w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold text-white shadow-sm border-2 border-white
                     ${isAnswered ? 'bg-gray-500' : 'bg-teal-500'}
+                  `}>
+                    {ballId}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className={`w-full max-w-5xl mt-8 mb-4 px-4 py-2 rounded-xl shadow-sm border text-center font-bold text-lg tracking-wide ${isDarkMode ? 'bg-gray-800 border-gray-700 text-orange-400' : 'bg-white/80 border-white text-orange-800'}`}>
+            BÀI TẬP 3: TRẢ LỜI NGẮN (60 CÂU)
+          </div>
+
+          <div className="grid grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3 md:gap-4 max-w-5xl p-4 mb-8">
+            {saBalls.map((ballId) => {
+              const isAnswered = answeredSABalls.includes(ballId);
+              return (
+                <div 
+                  key={`sa-${ballId}`}
+                  onMouseEnter={() => !isAnswered && sounds.hover()}
+                  onClick={() => handleSABallClick(ballId)}
+                  className={`
+                    relative w-12 h-12 md:w-16 md:h-16 rounded-lg flex items-center justify-center
+                    cursor-pointer transition-all duration-300 border-2 shadow-md
+                    ${isAnswered 
+                      ? (isDarkMode ? 'bg-gray-700 border-gray-600 grayscale opacity-50 scale-95 pointer-events-none' : 'bg-gray-200 border-gray-300 grayscale opacity-50 scale-95 pointer-events-none')
+                      : (isDarkMode ? 'bg-gradient-to-br from-gray-800 to-gray-700 border-orange-700 hover:scale-110 hover:shadow-xl hover:border-orange-500' : 'bg-gradient-to-br from-white to-orange-50 border-orange-300 hover:scale-110 hover:shadow-xl hover:border-orange-400')
+                    }
+                  `}
+                >
+                  {/* Ảnh Pokemon khác cho phần Trả lời ngắn */}
+                  <img 
+                    src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${ballId + 200}.png`} 
+                    alt={`Pokemon SA ${ballId}`} 
+                    className="w-8 h-8 md:w-12 md:h-12 object-contain drop-shadow-sm transition-transform duration-300 hover:rotate-12"
+                    loading="lazy"
+                  />
+                  {/* Badge Số Câu Hỏi */}
+                  <div className={`
+                    absolute -top-1 -right-1 w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold text-white shadow-sm border-2 border-white
+                    ${isAnswered ? 'bg-gray-500' : 'bg-orange-500'}
                   `}>
                     {ballId}
                   </div>
@@ -872,6 +977,57 @@ export default function App() {
         </div>
       )}
 
+      {/* --- MODAL TRẢ LỜI NGẮN --- */}
+      {activeSAQuestionId && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in duration-300 transform">
+            <div className="bg-gradient-to-r from-orange-500 to-amber-600 text-white p-5 flex justify-between items-center shadow-md relative z-10">
+              <h2 className="text-2xl font-black tracking-wide flex items-center gap-2">
+                <span className="bg-white/20 px-3 py-1 rounded-lg">Câu hỏi Trả lời ngắn số {activeSAQuestionId}</span>
+              </h2>
+              <button onClick={() => setActiveSAQuestionId(null)} className="hover:bg-white/20 p-2 rounded-full transition-colors"><X size={24} /></button>
+            </div>
+            
+            <div className="p-8 bg-gray-50/50">
+              <div className="text-2xl mb-8 text-center font-bold text-gray-800 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 min-h-[120px] flex items-center justify-center">
+                {saQuestions.find(q => q.id === activeSAQuestionId)?.text}
+              </div>
+
+              <div className="mb-8 flex justify-center items-center gap-4 bg-orange-50 p-4 rounded-2xl border border-orange-100">
+                  <span className="font-bold text-orange-800">Học sinh trả lời:</span>
+                  <select 
+                      value={answeringStudentId} 
+                      onChange={(e) => setAnsweringStudentId(e.target.value)}
+                      className="border-2 border-orange-300 rounded-xl p-2.5 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 font-semibold text-gray-700 min-w-[250px] bg-white shadow-sm transition-all cursor-pointer"
+                  >
+                      <option value="" disabled>-- Chọn học sinh --</option>
+                      {students.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.score} điểm)</option>
+                      ))}
+                  </select>
+              </div>
+
+              <div className="flex flex-col gap-4 max-w-lg mx-auto">
+                <input
+                  type="text"
+                  value={studentSAInput}
+                  onChange={(e) => setStudentSAInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && submitSAAnswer()}
+                  placeholder="Nhập câu trả lời..."
+                  className="w-full text-center text-xl p-4 rounded-2xl border-2 border-gray-300 focus:border-orange-500 focus:ring-4 focus:ring-orange-100 outline-none transition-all shadow-inner"
+                />
+                <button
+                  onClick={submitSAAnswer}
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold text-xl p-4 rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-95"
+                >
+                  XÁC NHẬN ĐÁP ÁN
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* --- MODAL QUẢN LÝ CÂU HỎI (ADMIN) --- */}
       {showAdmin && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 md:p-6">
@@ -939,8 +1095,8 @@ export default function App() {
                 ))}
               </div>
 
-              <h3 className="text-xl font-bold text-teal-800 mb-4 border-b-2 border-teal-200 pb-2">Phần 2: Đúng / Sai (30 Câu)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              <h3 className="text-xl font-bold text-teal-800 mb-4 border-b-2 border-teal-200 pb-2">Phần 2: Đúng / Sai (60 Câu)</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-12">
                 {tfQuestions.map((q, qIndex) => (
                   <div key={`tf-admin-${q.id}`} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
                     <div className="font-black text-lg mb-3 text-teal-700 flex items-center gap-2 border-b pb-2">
@@ -987,6 +1143,43 @@ export default function App() {
                         />
                         <XCircle size={20} /> SAI
                       </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <h3 className="text-xl font-bold text-orange-800 mb-4 border-b-2 border-orange-200 pb-2">Phần 3: Trả lời ngắn (60 Câu)</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {saQuestions.map((q, qIndex) => (
+                  <div key={`sa-admin-${q.id}`} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                    <div className="font-black text-lg mb-3 text-orange-700 flex items-center gap-2 border-b pb-2">
+                      <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded-md text-sm">#{q.id}</span>
+                      Câu hỏi Trả lời ngắn số {q.id}
+                    </div>
+                    <textarea 
+                      className="w-full border border-gray-300 rounded-xl p-3 text-sm mb-4 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 resize-none transition-all"
+                      rows={3}
+                      value={q.text}
+                      onChange={(e) => {
+                        const newQ = [...saQuestions];
+                        newQ[qIndex].text = e.target.value;
+                        setSaQuestions(newQ);
+                      }}
+                      placeholder="Nhập nội dung câu hỏi..."
+                    />
+                    <div className="flex items-center gap-3 p-2 rounded-lg border border-orange-200 bg-orange-50">
+                      <span className="font-bold text-orange-700 whitespace-nowrap">Đáp án:</span>
+                      <input 
+                        type="text" 
+                        value={q.correctAnswer}
+                        onChange={(e) => {
+                          const newQ = [...saQuestions];
+                          newQ[qIndex].correctAnswer = e.target.value;
+                          setSaQuestions(newQ);
+                        }}
+                        className="flex-1 bg-white border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-orange-500 transition-colors text-gray-800 font-semibold"
+                        placeholder="Nhập đáp án đúng"
+                      />
                     </div>
                   </div>
                 ))}
