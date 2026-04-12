@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun } from 'lucide-react';
+import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle } from 'lucide-react';
 
 // --- TRÌNH TẠO ÂM THANH (WEB AUDIO API) ---
 // Lazy init để tránh lỗi autoplay của trình duyệt
@@ -58,6 +58,12 @@ interface Question {
   correctIndex: number;
 }
 
+interface TFQuestion {
+  id: number;
+  text: string;
+  isTrue: boolean;
+}
+
 interface Student {
   id: string;
   name: string;
@@ -69,6 +75,12 @@ const initialQuestions: Question[] = Array.from({ length: 60 }, (_, i) => ({
   text: `Câu hỏi số ${i + 1}: Điền vào chỗ trống...`,
   options: ['Đáp án A', 'Đáp án B', 'Đáp án C', 'Đáp án D'],
   correctIndex: 0
+}));
+
+const initialTFQuestions: TFQuestion[] = Array.from({ length: 30 }, (_, i) => ({
+  id: i + 1,
+  text: `Câu hỏi Đúng/Sai số ${i + 1}: Mệnh đề này là đúng hay sai?`,
+  isTrue: true
 }));
 
 export default function App() {
@@ -99,6 +111,11 @@ export default function App() {
   const [questions, setQuestions] = useState<Question[]>(initialQuestions);
   const [balls, setBalls] = useState<number[]>(Array.from({ length: 60 }, (_, i) => i + 1));
   const [answeredBalls, setAnsweredBalls] = useState<number[]>([]);
+
+  // States: Bảng câu hỏi Đúng/Sai
+  const [tfQuestions, setTfQuestions] = useState<TFQuestion[]>(initialTFQuestions);
+  const [tfBalls, setTfBalls] = useState<number[]>(Array.from({ length: 30 }, (_, i) => i + 1));
+  const [answeredTFBalls, setAnsweredTFBalls] = useState<number[]>([]);
   
   // States: Timer
   const [timerInput, setTimerInput] = useState(10);
@@ -108,6 +125,7 @@ export default function App() {
   // States: Modals & UI
   const [bgmPlaying, setBgmPlaying] = useState(false);
   const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
+  const [activeTFQuestionId, setActiveTFQuestionId] = useState<number | null>(null);
   const [answeringStudentId, setAnsweringStudentId] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -276,10 +294,27 @@ export default function App() {
     setBalls(shuffled);
   };
 
+  const shuffleTFBalls = () => {
+    let shuffled = [...tfBalls];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    setTfBalls(shuffled);
+  };
+
   const handleBallClick = (ballId: number) => {
     initAudio(); // Init audio on first interaction
     if (!answeredBalls.includes(ballId)) {
       setActiveQuestionId(ballId);
+      setAnsweringStudentId(students.length > 0 ? students[0].id : '');
+    }
+  };
+
+  const handleTFBallClick = (ballId: number) => {
+    initAudio();
+    if (!answeredTFBalls.includes(ballId)) {
+      setActiveTFQuestionId(ballId);
       setAnsweringStudentId(students.length > 0 ? students[0].id : '');
     }
   };
@@ -304,11 +339,32 @@ export default function App() {
     setActiveQuestionId(null);
   };
 
+  const submitTFAnswer = (answer: boolean) => {
+    const question = tfQuestions.find(q => q.id === activeTFQuestionId);
+    if (!question) return;
+
+    if (!answeringStudentId) {
+        setAlertDialog("Vui lòng chọn học sinh trả lời!");
+        return;
+    }
+
+    if (question.isTrue === answer) {
+      sounds.correct();
+      updateStudentScore(answeringStudentId, 10); // CỘNG 10 ĐIỂM
+    } else {
+      sounds.wrong();
+    }
+    
+    setAnsweredTFBalls([...answeredTFBalls, activeTFQuestionId!]);
+    setActiveTFQuestionId(null);
+  };
+
   const resetGame = () => {
     setConfirmDialog({
         message: "Bạn có chắc muốn làm mới lại bảng (khôi phục các câu hỏi đã trả lời)?",
         onConfirm: () => {
             setAnsweredBalls([]);
+            setAnsweredTFBalls([]);
             setConfirmDialog(null);
         }
     });
@@ -541,7 +597,7 @@ export default function App() {
               <button onClick={resetScores} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-red-600 hover:shadow-lg active:scale-95 transition-all">
                 Reset Bảng Điểm
               </button>
-              <button onClick={shuffleBalls} className="bg-green-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-green-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
+              <button onClick={() => { shuffleBalls(); shuffleTFBalls(); }} className="bg-green-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-green-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
                 <Shuffle size={16}/> Trộn Bóng
               </button>
               <button onClick={() => setShowAdmin(true)} className="bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-purple-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
@@ -558,7 +614,12 @@ export default function App() {
         </div>
 
         {/* Bảng 60 Viên cầu */}
-        <div className="flex-1 flex items-center justify-center pr-0 lg:pr-64 pb-4 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 flex flex-col items-center justify-start pr-0 lg:pr-64 pb-4 overflow-y-auto custom-scrollbar">
+          
+          <div className={`w-full max-w-5xl mb-4 mt-2 px-4 py-2 rounded-xl shadow-sm border text-center font-bold text-lg tracking-wide ${isDarkMode ? 'bg-gray-800 border-gray-700 text-purple-400' : 'bg-white/80 border-white text-purple-800'}`}>
+            BÀI TẬP 1: TRẮC NGHIỆM (60 CÂU)
+          </div>
+
           <div className="grid grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3 md:gap-4 max-w-5xl p-4">
             {balls.map((ballId) => {
               const isAnswered = answeredBalls.includes(ballId);
@@ -587,6 +648,46 @@ export default function App() {
                   <div className={`
                     absolute -top-1 -right-1 w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold text-white shadow-sm border-2 border-white
                     ${isAnswered ? 'bg-gray-500' : 'bg-red-500'}
+                  `}>
+                    {ballId}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className={`w-full max-w-5xl mt-8 mb-4 px-4 py-2 rounded-xl shadow-sm border text-center font-bold text-lg tracking-wide ${isDarkMode ? 'bg-gray-800 border-gray-700 text-teal-400' : 'bg-white/80 border-white text-teal-800'}`}>
+            BÀI TẬP 2: ĐÚNG / SAI (30 CÂU)
+          </div>
+
+          <div className="grid grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3 md:gap-4 max-w-5xl p-4 mb-8">
+            {tfBalls.map((ballId) => {
+              const isAnswered = answeredTFBalls.includes(ballId);
+              return (
+                <div 
+                  key={`tf-${ballId}`}
+                  onMouseEnter={() => !isAnswered && sounds.hover()}
+                  onClick={() => handleTFBallClick(ballId)}
+                  className={`
+                    relative w-12 h-12 md:w-16 md:h-16 rounded-xl flex items-center justify-center
+                    cursor-pointer transition-all duration-300 border-2 shadow-md
+                    ${isAnswered 
+                      ? (isDarkMode ? 'bg-gray-700 border-gray-600 grayscale opacity-50 scale-95 pointer-events-none' : 'bg-gray-200 border-gray-300 grayscale opacity-50 scale-95 pointer-events-none')
+                      : (isDarkMode ? 'bg-gradient-to-br from-gray-800 to-gray-700 border-teal-700 hover:scale-110 hover:shadow-xl hover:border-teal-500' : 'bg-gradient-to-br from-white to-teal-50 border-teal-300 hover:scale-110 hover:shadow-xl hover:border-teal-400')
+                    }
+                  `}
+                >
+                  {/* Ảnh Pokemon khác cho phần Đúng/Sai */}
+                  <img 
+                    src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${ballId + 100}.png`} 
+                    alt={`Pokemon TF ${ballId}`} 
+                    className="w-8 h-8 md:w-12 md:h-12 object-contain drop-shadow-sm transition-transform duration-300 hover:rotate-12"
+                    loading="lazy"
+                  />
+                  {/* Badge Số Câu Hỏi */}
+                  <div className={`
+                    absolute -top-1 -right-1 w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold text-white shadow-sm border-2 border-white
+                    ${isAnswered ? 'bg-gray-500' : 'bg-teal-500'}
                   `}>
                     {ballId}
                   </div>
@@ -628,6 +729,10 @@ export default function App() {
             </div>
         </div>
 
+        {/* Footer Tác giả */}
+        <div className={`absolute bottom-2 left-1/2 transform -translate-x-1/2 text-sm font-medium z-10 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+          Tác giả: Dương Thị Hiệp, trường THCS Bình An - Kiên Lương - An Giang
+        </div>
       </div>
 
       {/* --- MODAL NHẬP DANH SÁCH --- */}
@@ -714,13 +819,66 @@ export default function App() {
         </div>
       )}
 
+      {/* --- MODAL TRẢ LỜI CÂU HỎI ĐÚNG/SAI --- */}
+      {activeTFQuestionId && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in duration-300 transform">
+            <div className="bg-gradient-to-r from-teal-600 to-emerald-600 text-white p-5 flex justify-between items-center shadow-md relative z-10">
+              <h2 className="text-2xl font-black tracking-wide flex items-center gap-2">
+                <span className="bg-white/20 px-3 py-1 rounded-lg">Câu hỏi Đúng/Sai số {activeTFQuestionId}</span>
+              </h2>
+              <button onClick={() => setActiveTFQuestionId(null)} className="hover:bg-white/20 p-2 rounded-full transition-colors"><X size={24} /></button>
+            </div>
+            
+            <div className="p-8 bg-gray-50/50">
+              <div className="text-2xl mb-8 text-center font-bold text-gray-800 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 min-h-[120px] flex items-center justify-center">
+                {tfQuestions.find(q => q.id === activeTFQuestionId)?.text}
+              </div>
+
+              <div className="mb-8 flex justify-center items-center gap-4 bg-teal-50 p-4 rounded-2xl border border-teal-100">
+                  <span className="font-bold text-teal-800">Học sinh trả lời:</span>
+                  <select 
+                      value={answeringStudentId} 
+                      onChange={(e) => setAnsweringStudentId(e.target.value)}
+                      className="border-2 border-teal-300 rounded-xl p-2.5 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 font-semibold text-gray-700 min-w-[250px] bg-white shadow-sm transition-all cursor-pointer"
+                  >
+                      <option value="" disabled>-- Chọn học sinh --</option>
+                      {students.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.score} điểm)</option>
+                      ))}
+                  </select>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-lg mx-auto">
+                <button 
+                  onClick={() => submitTFAnswer(true)}
+                  className="group relative p-6 rounded-2xl border-2 border-gray-200 bg-white hover:border-green-500 hover:bg-green-50 hover:shadow-md transition-all text-center text-xl font-bold overflow-hidden active:scale-[0.98] flex flex-col items-center gap-3"
+                >
+                  <div className="absolute inset-0 bg-green-100 opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                  <CheckCircle size={48} className="text-gray-400 group-hover:text-green-500 transition-colors" />
+                  <span className="text-gray-700 group-hover:text-green-700 transition-colors">ĐÚNG</span>
+                </button>
+                <button 
+                  onClick={() => submitTFAnswer(false)}
+                  className="group relative p-6 rounded-2xl border-2 border-gray-200 bg-white hover:border-red-500 hover:bg-red-50 hover:shadow-md transition-all text-center text-xl font-bold overflow-hidden active:scale-[0.98] flex flex-col items-center gap-3"
+                >
+                  <div className="absolute inset-0 bg-red-100 opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                  <XCircle size={48} className="text-gray-400 group-hover:text-red-500 transition-colors" />
+                  <span className="text-gray-700 group-hover:text-red-700 transition-colors">SAI</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* --- MODAL QUẢN LÝ CÂU HỎI (ADMIN) --- */}
       {showAdmin && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 md:p-6">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-5 border-b flex justify-between items-center bg-gradient-to-r from-gray-50 to-gray-100">
               <h2 className="text-2xl font-black text-gray-800 flex items-center gap-3">
-                <Settings className="text-purple-600" /> Quản lý Ngân hàng Câu hỏi (60 Câu)
+                <Settings className="text-purple-600" /> Quản lý Ngân hàng Câu hỏi
               </h2>
               <button onClick={() => setShowAdmin(false)} className="text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full p-2 transition-colors">
                 <X size={28} />
@@ -728,7 +886,8 @@ export default function App() {
             </div>
             
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-gray-100/50">
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              <h3 className="text-xl font-bold text-purple-800 mb-4 border-b-2 border-purple-200 pb-2">Phần 1: Trắc nghiệm (60 Câu)</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-12">
                 {questions.map((q, qIndex) => (
                   <div key={q.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
                     <div className="font-black text-lg mb-3 text-purple-700 flex items-center gap-2 border-b pb-2">
@@ -775,6 +934,59 @@ export default function App() {
                             />
                          </div>
                       ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <h3 className="text-xl font-bold text-teal-800 mb-4 border-b-2 border-teal-200 pb-2">Phần 2: Đúng / Sai (30 Câu)</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {tfQuestions.map((q, qIndex) => (
+                  <div key={`tf-admin-${q.id}`} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                    <div className="font-black text-lg mb-3 text-teal-700 flex items-center gap-2 border-b pb-2">
+                      <span className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded-md text-sm">#{q.id}</span>
+                      Câu hỏi Đúng/Sai số {q.id}
+                    </div>
+                    <textarea 
+                      className="w-full border border-gray-300 rounded-xl p-3 text-sm mb-4 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 resize-none transition-all"
+                      rows={3}
+                      value={q.text}
+                      onChange={(e) => {
+                        const newQ = [...tfQuestions];
+                        newQ[qIndex].text = e.target.value;
+                        setTfQuestions(newQ);
+                      }}
+                      placeholder="Nhập nội dung mệnh đề..."
+                    />
+                    <div className="flex gap-4">
+                      <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 cursor-pointer transition-all ${q.isTrue ? 'bg-green-50 border-green-500 text-green-700' : 'border-gray-200 hover:bg-gray-50 text-gray-600'}`}>
+                        <input 
+                          type="radio" 
+                          name={`tf-correct-${q.id}`} 
+                          checked={q.isTrue === true}
+                          onChange={() => {
+                            const newQ = [...tfQuestions];
+                            newQ[qIndex].isTrue = true;
+                            setTfQuestions(newQ);
+                          }}
+                          className="hidden"
+                        />
+                        <CheckCircle size={20} /> ĐÚNG
+                      </label>
+                      <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border-2 cursor-pointer transition-all ${!q.isTrue ? 'bg-red-50 border-red-500 text-red-700' : 'border-gray-200 hover:bg-gray-50 text-gray-600'}`}>
+                        <input 
+                          type="radio" 
+                          name={`tf-correct-${q.id}`} 
+                          checked={q.isTrue === false}
+                          onChange={() => {
+                            const newQ = [...tfQuestions];
+                            newQ[qIndex].isTrue = false;
+                            setTfQuestions(newQ);
+                          }}
+                          className="hidden"
+                        />
+                        <XCircle size={20} /> SAI
+                      </label>
                     </div>
                   </div>
                 ))}
