@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle } from 'lucide-react';
+import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle, Save } from 'lucide-react';
+import { supabase } from './lib/supabase';
 
 // --- TRÌNH TẠO ÂM THANH (WEB AUDIO API) ---
 // Lazy init để tránh lỗi autoplay của trình duyệt
@@ -74,6 +75,7 @@ interface Student {
   id: string;
   name: string;
   score: number;
+  class_id?: string;
 }
 
 const initialQuestions: Question[] = Array.from({ length: 60 }, (_, i) => ({
@@ -148,6 +150,66 @@ export default function App() {
   const [answeringStudentId, setAnsweringStudentId] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // --- SUPABASE SYNC ---
+  useEffect(() => {
+    const fetchSupabaseData = async () => {
+      try {
+        // Fetch classes and students
+        const { data: classes } = await supabase.from('classes').select('*');
+        const { data: students } = await supabase.from('students').select('*');
+        
+        if (classes && students) {
+          const newClassesData: Record<string, Student[]> = {};
+          classes.forEach(c => {
+            newClassesData[c.name] = students
+              .filter(s => s.class_id === c.id)
+              .map(s => ({ id: s.id, name: s.name, score: s.score, class_id: s.class_id }));
+          });
+          if (Object.keys(newClassesData).length > 0) {
+            setClassesData(newClassesData);
+            if (!newClassesData[currentClass] && Object.keys(newClassesData).length > 0) {
+              setCurrentClass(Object.keys(newClassesData)[0]);
+            }
+          }
+        }
+
+        // Fetch questions
+        const { data: mcData } = await supabase.from('questions_mc').select('*').order('id');
+        if (mcData && mcData.length > 0) {
+            setQuestions(mcData.map(q => ({ id: q.id, text: q.text, options: q.options, correctIndex: q.correct_index })));
+        }
+
+        const { data: tfData } = await supabase.from('questions_tf').select('*').order('id');
+        if (tfData && tfData.length > 0) {
+            setTfQuestions(tfData.map(q => ({ id: q.id, text: q.text, isTrue: q.is_true })));
+        }
+
+        const { data: saData } = await supabase.from('questions_sa').select('*').order('id');
+        if (saData && saData.length > 0) {
+            setSaQuestions(saData.map(q => ({ id: q.id, text: q.text, correctAnswer: q.correct_answer })));
+        }
+
+        // Fetch game state
+        const { data: gameState } = await supabase.from('game_state').select('*').eq('id', 1).single();
+        if (gameState) {
+            setAnsweredBalls(gameState.answered_mc || []);
+            setAnsweredTFBalls(gameState.answered_tf || []);
+            setAnsweredSABalls(gameState.answered_sa || []);
+        }
+
+      } catch (error) {
+        console.error("Error fetching from Supabase:", error);
+      }
+    };
+
+    fetchSupabaseData();
+  }, []);
+
+  const syncGameState = async (mc: number[], tf: number[], sa: number[]) => {
+    await supabase.from('game_state').upsert({ id: 1, answered_mc: mc, answered_tf: tf, answered_sa: sa });
+  };
 
   useEffect(() => {
     if (isDarkMode) {
@@ -453,6 +515,29 @@ export default function App() {
   const filteredStudents = students.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalPages = Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE) || 1;
   const displayedStudents = filteredStudents.slice((currentPage - 1) * STUDENTS_PER_PAGE, currentPage * STUDENTS_PER_PAGE);
+
+  const saveQuestionsToSupabase = async () => {
+    setIsSyncing(true);
+    try {
+      // Upsert MC questions
+      const mcPayload = questions.map(q => ({ id: q.id, text: q.text, options: q.options, correct_index: q.correctIndex }));
+      await supabase.from('questions_mc').upsert(mcPayload);
+
+      // Upsert TF questions
+      const tfPayload = tfQuestions.map(q => ({ id: q.id, text: q.text, is_true: q.isTrue }));
+      await supabase.from('questions_tf').upsert(tfPayload);
+
+      // Upsert SA questions
+      const saPayload = saQuestions.map(q => ({ id: q.id, text: q.text, correct_answer: q.correctAnswer }));
+      await supabase.from('questions_sa').upsert(saPayload);
+
+      setAlertDialog("Đã lưu toàn bộ câu hỏi lên Supabase thành công!");
+    } catch (error) {
+      console.error(error);
+      setAlertDialog("Có lỗi xảy ra khi lưu lên Supabase!");
+    }
+    setIsSyncing(false);
+  };
 
   return (
     <div className={`flex h-screen font-sans overflow-hidden transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0] text-gray-800'}`}>
@@ -836,7 +921,7 @@ export default function App() {
 
         {/* Footer Tác giả */}
         <div className={`absolute bottom-2 left-1/2 transform -translate-x-1/2 text-sm font-medium z-10 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-          Tác giả: Dương Thị Hiệp, trường THCS Bình An - Kiên Lương - An Giang
+          Tác giả: Dương Thị Hiệp, Trường THCS Bình An - Kiên Lương - An Giang
         </div>
       </div>
 
@@ -1036,9 +1121,18 @@ export default function App() {
               <h2 className="text-2xl font-black text-gray-800 flex items-center gap-3">
                 <Settings className="text-purple-600" /> Quản lý Ngân hàng Câu hỏi
               </h2>
-              <button onClick={() => setShowAdmin(false)} className="text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full p-2 transition-colors">
-                <X size={28} />
-              </button>
+              <div className="flex gap-3">
+                <button 
+                  onClick={saveQuestionsToSupabase} 
+                  disabled={isSyncing}
+                  className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-xl font-bold transition-all shadow-md active:scale-95 disabled:opacity-50"
+                >
+                  <Save size={20} /> {isSyncing ? 'Đang lưu...' : 'Lưu lên Cloud'}
+                </button>
+                <button onClick={() => setShowAdmin(false)} className="text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full p-2 transition-colors">
+                  <X size={28} />
+                </button>
+              </div>
             </div>
             
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-gray-100/50">
