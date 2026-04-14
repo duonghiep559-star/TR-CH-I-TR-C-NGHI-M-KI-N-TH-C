@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle, Save } from 'lucide-react';
+import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle, Save, LogOut, Mail, Lock, UserPlus, LogIn } from 'lucide-react';
 import { supabase } from './lib/supabase';
+import { Session } from '@supabase/supabase-js';
 
 // --- TRÌNH TẠO ÂM THANH (WEB AUDIO API) ---
 // Lazy init để tránh lỗi autoplay của trình duyệt
@@ -152,8 +153,28 @@ export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // --- AUTH STATE ---
+  const [session, setSession] = useState<Session | null>(null);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
+  const [authError, setAuthError] = useState('');
+
   // --- SUPABASE SYNC ---
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
     const fetchSupabaseData = async () => {
       try {
         // Fetch classes and students
@@ -192,7 +213,7 @@ export default function App() {
         }
 
         // Fetch game state
-        const { data: gameState } = await supabase.from('game_state').select('*').eq('id', 1).single();
+        const { data: gameState } = await supabase.from('game_state').select('*').eq('user_id', session.user.id).single();
         if (gameState) {
             setAnsweredBalls(gameState.answered_mc || []);
             setAnsweredTFBalls(gameState.answered_tf || []);
@@ -205,10 +226,11 @@ export default function App() {
     };
 
     fetchSupabaseData();
-  }, []);
+  }, [session]);
 
   const syncGameState = async (mc: number[], tf: number[], sa: number[]) => {
-    await supabase.from('game_state').upsert({ id: 1, answered_mc: mc, answered_tf: tf, answered_sa: sa });
+    if (!session) return;
+    await supabase.from('game_state').upsert({ user_id: session.user.id, answered_mc: mc, answered_tf: tf, answered_sa: sa }, { onConflict: 'user_id' });
   };
 
   useEffect(() => {
@@ -517,19 +539,20 @@ export default function App() {
   const displayedStudents = filteredStudents.slice((currentPage - 1) * STUDENTS_PER_PAGE, currentPage * STUDENTS_PER_PAGE);
 
   const saveQuestionsToSupabase = async () => {
+    if (!session) return;
     setIsSyncing(true);
     try {
       // Upsert MC questions
-      const mcPayload = questions.map(q => ({ id: q.id, text: q.text, options: q.options, correct_index: q.correctIndex }));
-      await supabase.from('questions_mc').upsert(mcPayload);
+      const mcPayload = questions.map(q => ({ id: q.id, user_id: session.user.id, text: q.text, options: q.options, correct_index: q.correctIndex }));
+      await supabase.from('questions_mc').upsert(mcPayload, { onConflict: 'id,user_id' });
 
       // Upsert TF questions
-      const tfPayload = tfQuestions.map(q => ({ id: q.id, text: q.text, is_true: q.isTrue }));
-      await supabase.from('questions_tf').upsert(tfPayload);
+      const tfPayload = tfQuestions.map(q => ({ id: q.id, user_id: session.user.id, text: q.text, is_true: q.isTrue }));
+      await supabase.from('questions_tf').upsert(tfPayload, { onConflict: 'id,user_id' });
 
       // Upsert SA questions
-      const saPayload = saQuestions.map(q => ({ id: q.id, text: q.text, correct_answer: q.correctAnswer }));
-      await supabase.from('questions_sa').upsert(saPayload);
+      const saPayload = saQuestions.map(q => ({ id: q.id, user_id: session.user.id, text: q.text, correct_answer: q.correctAnswer }));
+      await supabase.from('questions_sa').upsert(saPayload, { onConflict: 'id,user_id' });
 
       setAlertDialog("Đã lưu toàn bộ câu hỏi lên Supabase thành công!");
     } catch (error) {
@@ -538,6 +561,105 @@ export default function App() {
     }
     setIsSyncing(false);
   };
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthMessage('');
+    setAuthError('');
+    try {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+        if (error) throw error;
+        setAuthMessage('Đăng ký thành công! Vui lòng kiểm tra email để xác nhận (nếu có) hoặc đăng nhập.');
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+        if (error) throw error;
+      }
+    } catch (error: any) {
+      setAuthError(error.error_description || error.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  if (!session) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0] text-gray-800'}`}>
+        <div className={`w-full max-w-md p-8 rounded-3xl shadow-2xl border ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-white'}`}>
+          <div className="flex justify-center mb-6">
+            <div className="w-20 h-20 bg-purple-100 rounded-2xl flex items-center justify-center shadow-inner">
+              <Lock className="text-purple-600" size={40} />
+            </div>
+          </div>
+          <h2 className="text-3xl font-black text-center mb-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-blue-600">
+            {isSignUp ? 'Tạo Tài Khoản' : 'Đăng Nhập'}
+          </h2>
+          <p className="text-center text-sm mb-8 opacity-70">
+            {isSignUp ? 'Đăng ký để lưu trữ dữ liệu của riêng bạn' : 'Đăng nhập để tiếp tục quản lý lớp học'}
+          </p>
+
+          <form onSubmit={handleAuth} className="space-y-5">
+            {authError && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl text-sm">
+                {authError}
+              </div>
+            )}
+            {authMessage && (
+              <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-xl text-sm">
+                {authMessage}
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-bold mb-2 opacity-80">Email</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 opacity-50" size={20} />
+                <input
+                  type="email"
+                  required
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  className={`w-full pl-10 pr-4 py-3 rounded-xl outline-none border focus:ring-2 focus:ring-purple-400 transition-all ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}
+                  placeholder="Nhập email của bạn"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-bold mb-2 opacity-80">Mật khẩu</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 opacity-50" size={20} />
+                <input
+                  type="password"
+                  required
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  className={`w-full pl-10 pr-4 py-3 rounded-xl outline-none border focus:ring-2 focus:ring-purple-400 transition-all ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}
+                  placeholder="Nhập mật khẩu"
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={authLoading}
+              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold py-3 rounded-xl shadow-md hover:shadow-lg active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-70"
+            >
+              {authLoading ? 'Đang xử lý...' : (isSignUp ? <><UserPlus size={20}/> Đăng Ký</> : <><LogIn size={20}/> Đăng Nhập</>)}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center text-sm">
+            <button onClick={() => setIsSignUp(!isSignUp)} className="text-purple-600 hover:text-purple-800 font-bold hover:underline transition-colors">
+              {isSignUp ? 'Đã có tài khoản? Đăng nhập ngay' : 'Chưa có tài khoản? Đăng ký mới'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex h-screen font-sans overflow-hidden transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0] text-gray-800'}`}>
@@ -758,6 +880,9 @@ export default function App() {
               </button>
               <button onClick={() => setIsDarkMode(!isDarkMode)} className={`px-4 py-2 rounded-xl text-sm font-semibold shadow-md active:scale-95 transition-all flex items-center gap-2 ${isDarkMode ? 'bg-yellow-400 hover:bg-yellow-500 text-gray-900' : 'bg-gray-800 hover:bg-gray-700 text-white'}`}>
                 {isDarkMode ? <Sun size={16}/> : <Moon size={16}/>} {isDarkMode ? 'Sáng' : 'Tối'}
+              </button>
+              <button onClick={handleLogout} className="bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-rose-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2 ml-auto">
+                <LogOut size={16}/> Đăng xuất
               </button>
             </div>
           </div>
