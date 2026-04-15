@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle, Save, Database, ClipboardList, UploadCloud } from 'lucide-react';
+import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle, Save, Database, ClipboardList, UploadCloud, Trash2 } from 'lucide-react';
 import { supabase } from './lib/supabase';
+import { GoogleGenAI } from '@google/genai';
 
 // --- TRÌNH TẠO ÂM THANH (WEB AUDIO API) ---
 // Lazy init để tránh lỗi autoplay của trình duyệt
@@ -389,11 +390,26 @@ export default function App() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Validate file type for Gemini API
+    if (file.name.toLowerCase().endsWith('.docx') || file.name.toLowerCase().endsWith('.doc') || file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.pptx')) {
+      setAlertDialog("Hệ thống AI hiện tại chưa hỗ trợ trực tiếp file Word/Excel/PowerPoint. Vui lòng lưu file của bạn dưới dạng PDF và tải lên lại nhé!");
+      if (documentFileInputRef.current) documentFileInputRef.current.value = '';
+      return;
+    }
+
+    let mimeType = file.type;
+    if (!mimeType) {
+      if (file.name.toLowerCase().endsWith('.pdf')) mimeType = 'application/pdf';
+      else if (file.name.toLowerCase().endsWith('.txt')) mimeType = 'text/plain';
+      else if (file.name.toLowerCase().endsWith('.csv')) mimeType = 'text/csv';
+      else mimeType = 'text/plain'; // Fallback
+    }
+
     setIsUploading(true);
-    setAlertDialog(`Đang tải tài liệu "${file.name}" lên Cloud...`);
+    setAlertDialog(`Đang xử lý tài liệu "${file.name}"... Quá trình này có thể mất vài chục giây để AI phân tích và tạo câu hỏi.`);
 
     try {
-      // Upload to Supabase Storage bucket named 'documents'
+      // 1. Upload to Supabase Storage bucket named 'documents'
       const fileExt = file.name.split('.').pop();
       const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
       const filePath = `uploads/${fileName}`;
@@ -403,16 +419,85 @@ export default function App() {
         .upload(filePath, file);
 
       if (error) {
-        throw error;
+        console.error("Supabase upload error:", error);
+        // We continue even if upload fails, to try generating questions
       }
 
-      const { data: publicUrlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+      // 2. Generate questions using Gemini API
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
-      setAlertDialog(`Đã tải tài liệu "${file.name}" lên thành công! File đã được lưu trữ an toàn trên Supabase Storage.`);
+      const prompt = `Bạn là một chuyên gia giáo dục. Hãy đọc tài liệu đính kèm và tạo ra các câu hỏi trắc nghiệm, đúng/sai, và trả lời ngắn dựa trên nội dung tài liệu.
+Vui lòng trả về kết quả dưới định dạng JSON chính xác như sau:
+{
+  "mcQuestions": [
+    { "id": 1, "text": "Câu hỏi trắc nghiệm?", "options": ["A", "B", "C", "D"], "correctIndex": 0 }
+  ],
+  "tfQuestions": [
+    { "id": 1, "text": "Câu hỏi đúng sai?", "isTrue": true }
+  ],
+  "saQuestions": [
+    { "id": 1, "text": "Câu hỏi trả lời ngắn?", "correctAnswer": "Đáp án" }
+  ]
+}
+Tạo tối đa 10 câu trắc nghiệm, 5 câu đúng/sai và 5 câu trả lời ngắn. Đảm bảo JSON hợp lệ, không có markdown formatting (không có \`\`\`json).`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  data: base64Data,
+                  mimeType: mimeType
+                }
+              },
+              { text: prompt }
+            ]
+          }
+        ]
+      });
+
+      const responseText = response.text || '';
+      
+      // Robust JSON extraction
+      const startIdx = responseText.indexOf('{');
+      const endIdx = responseText.lastIndexOf('}');
+      
+      if (startIdx === -1 || endIdx === -1) {
+        throw new Error("AI không trả về định dạng JSON hợp lệ.");
+      }
+      
+      const jsonStr = responseText.substring(startIdx, endIdx + 1);
+      const generatedData = JSON.parse(jsonStr);
+
+      if (generatedData.mcQuestions && Array.isArray(generatedData.mcQuestions)) {
+        setQuestions(generatedData.mcQuestions);
+      }
+      if (generatedData.tfQuestions && Array.isArray(generatedData.tfQuestions)) {
+        setTfQuestions(generatedData.tfQuestions);
+      }
+      if (generatedData.saQuestions && Array.isArray(generatedData.saQuestions)) {
+        setSaQuestions(generatedData.saQuestions);
+      }
+
+      setAlertDialog(`Đã tạo câu hỏi thành công từ tài liệu "${file.name}"! Bạn có thể xem và chỉnh sửa trong phần Quản lý Câu hỏi.`);
       
     } catch (error: any) {
-      console.error("Upload error:", error);
-      setAlertDialog(`Lỗi tải lên: ${error.message || 'Vui lòng kiểm tra xem bạn đã tạo bucket "documents" trên Supabase chưa.'}`);
+      console.error("Upload/Generation error:", error);
+      setAlertDialog(`Lỗi xử lý tài liệu: ${error.message || 'Vui lòng thử lại với file khác.'}`);
     } finally {
       setIsUploading(false);
       if (documentFileInputRef.current) documentFileInputRef.current.value = '';
@@ -634,15 +719,39 @@ export default function App() {
              <div className="mt-4 flex flex-col w-full gap-3">
                 <div className={`flex items-center justify-between px-4 py-2 rounded-xl font-bold text-sm shadow-sm border transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-red-400 border-gray-600' : 'bg-white text-red-600 border-orange-200'}`}>
                   <span>LỚP:</span>
-                  <select 
-                    value={currentClass} 
-                    onChange={(e) => setCurrentClass(e.target.value)}
-                    className={`w-28 outline-none text-right bg-transparent cursor-pointer ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}
-                  >
-                    {Object.keys(classesData).map(cls => (
-                      <option key={cls} value={cls}>{cls}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <select 
+                      value={currentClass} 
+                      onChange={(e) => setCurrentClass(e.target.value)}
+                      className={`w-28 outline-none text-right bg-transparent cursor-pointer ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}
+                    >
+                      {Object.keys(classesData).map(cls => (
+                        <option key={cls} value={cls}>{cls}</option>
+                      ))}
+                    </select>
+                    <button 
+                      onClick={() => {
+                        if (Object.keys(classesData).length <= 1) {
+                          setAlertDialog("Không thể xóa lớp cuối cùng!");
+                          return;
+                        }
+                        setConfirmDialog({
+                          message: `Bạn có chắc chắn muốn xóa lớp ${currentClass} và toàn bộ học sinh trong lớp này?`,
+                          onConfirm: () => {
+                            const newClassesData = { ...classesData };
+                            delete newClassesData[currentClass];
+                            setClassesData(newClassesData);
+                            setCurrentClass(Object.keys(newClassesData)[0]);
+                            setConfirmDialog(null);
+                          }
+                        });
+                      }}
+                      className="text-red-500 hover:text-red-700 hover:bg-red-100 p-1 rounded-md transition-colors"
+                      title="Xóa lớp này"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="flex gap-2">
