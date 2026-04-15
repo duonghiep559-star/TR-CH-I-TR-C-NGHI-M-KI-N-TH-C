@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle, Save, Database, ClipboardList, UploadCloud, Trash2, Users, Link, Filter, BarChart } from 'lucide-react';
+import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle, Save, Database, ClipboardList, UploadCloud, Trash2, Users, Link, Filter, BarChart, LogOut } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { GoogleGenAI } from '@google/genai';
+import { User } from '@supabase/supabase-js';
 
 // --- TRÌNH TẠO ÂM THANH (WEB AUDIO API) ---
 // Lazy init để tránh lỗi autoplay của trình duyệt
@@ -156,8 +157,27 @@ export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // --- AUTH STATE ---
+  const [user, setUser] = useState<User | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+
   // --- SUPABASE SYNC ---
   useEffect(() => {
+    // Check active sessions and sets the user
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setIsAuthChecking(false);
+    });
+
+    // Listen for changes on auth state
+    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
     const fetchSupabaseData = async () => {
       try {
         // Fetch realtime scores first
@@ -276,6 +296,7 @@ export default function App() {
 
     return () => {
       supabase.removeChannel(scoreSubscription);
+      authSubscription.unsubscribe();
     };
   }, []);
 
@@ -817,6 +838,114 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
     setIsSyncing(false);
   };
 
+  // --- AUTH LOGIC ---
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    try {
+      if (authMode === 'register') {
+        const { error } = await supabase.auth.signUp({
+          email: authEmail,
+          password: authPassword,
+        });
+        if (error) throw error;
+        setAlertDialog('Đăng ký thành công! Vui lòng kiểm tra email để xác thực (nếu có yêu cầu) hoặc đăng nhập.');
+        setAuthMode('login');
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password: authPassword,
+        });
+        if (error) throw error;
+      }
+    } catch (error: any) {
+      setAlertDialog(error.message || 'Có lỗi xảy ra trong quá trình xác thực.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  if (isAuthChecking) {
+    return <div className="flex h-screen items-center justify-center bg-gray-100">Đang tải...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0]">
+        <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in duration-300">
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center">
+              <Users size={32} />
+            </div>
+          </div>
+          <h2 className="text-3xl font-black text-center mb-8 text-transparent bg-clip-text bg-gradient-to-r from-purple-700 to-blue-600">
+            {authMode === 'login' ? 'ĐĂNG NHẬP' : 'ĐĂNG KÝ TÀI KHOẢN'}
+          </h2>
+          <form onSubmit={handleAuth} className="flex flex-col gap-5">
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-2">Email</label>
+              <input 
+                type="email" 
+                required
+                value={authEmail}
+                onChange={e => setAuthEmail(e.target.value)}
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-500/20 transition-all"
+                placeholder="Nhập email..."
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-2">Mật khẩu</label>
+              <input 
+                type="password" 
+                required
+                value={authPassword}
+                onChange={e => setAuthPassword(e.target.value)}
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-500/20 transition-all"
+                placeholder="Nhập mật khẩu..."
+              />
+            </div>
+            <button 
+              type="submit" 
+              disabled={authLoading}
+              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-70 mt-4"
+            >
+              {authLoading ? 'Đang xử lý...' : (authMode === 'login' ? 'Đăng nhập' : 'Đăng ký')}
+            </button>
+          </form>
+          <div className="mt-8 text-center text-sm font-medium text-gray-600">
+            {authMode === 'login' ? 'Chưa có tài khoản? ' : 'Đã có tài khoản? '}
+            <button 
+              onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+              className="text-purple-600 font-bold hover:text-purple-800 hover:underline transition-colors"
+            >
+              {authMode === 'login' ? 'Đăng ký ngay' : 'Đăng nhập'}
+            </button>
+          </div>
+        </div>
+        
+        {/* --- ALERT DIALOG (Auth) --- */}
+        {alertDialog && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center animate-in fade-in zoom-in duration-200">
+               <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <FileText size={32} />
+              </div>
+              <h3 className="text-xl font-bold mb-2 text-gray-800">Thông báo</h3>
+              <p className="text-gray-600 mb-8">{alertDialog}</p>
+              <div className="flex justify-center">
+                <button onClick={() => setAlertDialog('')} className="w-full py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 font-semibold text-white shadow-md transition-colors">Đã hiểu</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className={`flex h-screen font-sans overflow-hidden transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0] text-gray-800'}`}>
       
@@ -1237,6 +1366,10 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
             <button onClick={() => setShowTeacherDashboard(true)} className="w-full bg-gradient-to-r from-teal-500 to-emerald-600 text-white py-3 rounded-xl text-sm font-bold shadow-md hover:from-teal-600 hover:to-emerald-700 hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 mb-3">
               <BarChart size={18} />
               Tiến độ học sinh
+            </button>
+            <button onClick={handleLogout} className="w-full bg-gradient-to-r from-red-500 to-rose-600 text-white py-3 rounded-xl text-sm font-bold shadow-md hover:from-red-600 hover:to-rose-700 hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 mb-3">
+              <LogOut size={18} />
+              Đăng xuất
             </button>
             <div className="flex gap-2">
               <button onClick={exportQuestionsJSON} className={`flex-1 border py-2 rounded-xl text-[11px] font-bold shadow-sm transition-all active:scale-95 flex flex-col items-center justify-center gap-1 ${isDarkMode ? 'bg-gray-700 text-indigo-400 border-indigo-500 hover:bg-gray-600' : 'bg-white text-[#4f46e5] border-indigo-200 hover:bg-indigo-50'}`}>
