@@ -160,21 +160,40 @@ export default function App() {
   useEffect(() => {
     const fetchSupabaseData = async () => {
       try {
-        // Fetch classes and students
-        const { data: classes } = await supabase.from('classes').select('*');
-        const { data: students } = await supabase.from('students').select('*');
+        // Fetch realtime scores first
+        const { data: realtimeData, error: realtimeError } = await supabase.from('realtime_scores').select('*');
         
-        if (classes && students) {
+        if (realtimeData && realtimeData.length > 0) {
           const newClassesData: Record<string, Student[]> = {};
-          classes.forEach(c => {
-            newClassesData[c.name] = students
-              .filter(s => s.class_id === c.id)
-              .map(s => ({ id: s.id, name: s.name, score: s.score, class_id: s.class_id }));
+          realtimeData.forEach(row => {
+            if (!newClassesData[row.class_name]) newClassesData[row.class_name] = [];
+            newClassesData[row.class_name].push({
+              id: row.id,
+              name: row.student_name,
+              score: row.score
+            });
           });
-          if (Object.keys(newClassesData).length > 0) {
-            setClassesData(newClassesData);
-            if (!newClassesData[currentClass] && Object.keys(newClassesData).length > 0) {
-              setCurrentClass(Object.keys(newClassesData)[0]);
+          setClassesData(newClassesData);
+          if (!newClassesData[currentClass] && Object.keys(newClassesData).length > 0) {
+            setCurrentClass(Object.keys(newClassesData)[0]);
+          }
+        } else {
+          // Fallback to old classes and students
+          const { data: classes } = await supabase.from('classes').select('*');
+          const { data: students } = await supabase.from('students').select('*');
+          
+          if (classes && students) {
+            const newClassesData: Record<string, Student[]> = {};
+            classes.forEach(c => {
+              newClassesData[c.name] = students
+                .filter(s => s.class_id === c.id)
+                .map(s => ({ id: s.id, name: s.name, score: s.score, class_id: s.class_id }));
+            });
+            if (Object.keys(newClassesData).length > 0) {
+              setClassesData(newClassesData);
+              if (!newClassesData[currentClass] && Object.keys(newClassesData).length > 0) {
+                setCurrentClass(Object.keys(newClassesData)[0]);
+              }
             }
           }
         }
@@ -209,6 +228,55 @@ export default function App() {
     };
 
     fetchSupabaseData();
+
+    // Subscribe to realtime scores
+    const scoreSubscription = supabase.channel('public:realtime_scores')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'realtime_scores' }, payload => {
+        if (payload.eventType === 'DELETE') {
+          const record = payload.old as any;
+          if (!record || !record.id) return;
+          setClassesData(prev => {
+            const newData = { ...prev };
+            for (const className in newData) {
+              newData[className] = newData[className].filter(s => s.id !== record.id);
+            }
+            return newData;
+          });
+        } else {
+          const record = payload.new as any;
+          if (!record || !record.id) return;
+          
+          setClassesData(prev => {
+            const newData = { ...prev };
+            const className = record.class_name;
+            
+            if (!newData[className]) {
+               newData[className] = [];
+            }
+            
+            const studentIndex = newData[className].findIndex(s => s.id === record.id);
+            if (studentIndex !== -1) {
+              newData[className][studentIndex] = {
+                ...newData[className][studentIndex],
+                score: record.score,
+                name: record.student_name
+              };
+            } else {
+              newData[className].push({
+                id: record.id,
+                name: record.student_name,
+                score: record.score
+              });
+            }
+            return newData;
+          });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(scoreSubscription);
+    };
   }, []);
 
   const syncGameState = async (mc: number[], tf: number[], sa: number[]) => {
@@ -277,11 +345,23 @@ export default function App() {
   // Logic Học sinh
   const addStudent = () => {
     if (newStudentName.trim()) {
+      const newId = Date.now().toString() + Math.random().toString(36).substring(2,9);
+      const newStudent = { id: newId, name: newStudentName.trim(), score: 0 };
+      
       setClassesData(prev => ({
         ...prev,
-        [currentClass]: [...(prev[currentClass] || []), { id: Date.now().toString() + Math.random().toString(36).substring(2,9), name: newStudentName, score: 0 }]
+        [currentClass]: [...(prev[currentClass] || []), newStudent]
       }));
       setNewStudentName('');
+
+      // Sync to Supabase
+      supabase.from('realtime_scores').upsert({
+        id: newId,
+        student_name: newStudent.name,
+        class_name: currentClass,
+        score: 0,
+        updated_at: new Date().toISOString()
+      }).catch(console.error);
     }
   };
 
@@ -290,13 +370,34 @@ export default function App() {
       ...prev,
       [currentClass]: prev[currentClass].filter(s => s.id !== id)
     }));
+    
+    // Sync to Supabase
+    supabase.from('realtime_scores').delete().eq('id', id).catch(console.error);
   };
 
   const updateStudentScore = (id: string, points: number) => {
-    setClassesData(prev => ({
-      ...prev,
-      [currentClass]: prev[currentClass].map(s => s.id === id ? { ...s, score: s.score + points } : s)
-    }));
+    setClassesData(prev => {
+      const newClassesData = { ...prev };
+      const updatedStudents = newClassesData[currentClass].map(s => {
+        if (s.id === id) {
+          const newScore = s.score + points;
+          // Push to Supabase Realtime Table
+          supabase.from('realtime_scores').upsert({
+            id: s.id,
+            student_name: s.name,
+            class_name: currentClass,
+            score: newScore,
+            updated_at: new Date().toISOString()
+          }).then(({error}) => {
+            if (error) console.error("Lỗi đồng bộ điểm:", error);
+          });
+          return { ...s, score: newScore };
+        }
+        return s;
+      });
+      newClassesData[currentClass] = updatedStudents;
+      return newClassesData;
+    });
   };
 
   // Logic Import/Export Danh sách
@@ -328,6 +429,17 @@ export default function App() {
       ...prev,
       [currentClass]: [...(prev[currentClass] || []), ...newStudents]
     }));
+    
+    // Sync to Supabase
+    const upsertData = newStudents.map(s => ({
+      id: s.id,
+      student_name: s.name,
+      class_name: currentClass,
+      score: 0,
+      updated_at: new Date().toISOString()
+    }));
+    supabase.from('realtime_scores').upsert(upsertData).catch(console.error);
+
     setShowImportListModal(false);
     setImportText('');
     setAlertDialog(`Đã thêm thành công ${newStudents.length} học sinh vào lớp ${currentClass}.`);
