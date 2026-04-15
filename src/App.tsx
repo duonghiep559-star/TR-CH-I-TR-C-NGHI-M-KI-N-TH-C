@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle, Save, Database, ClipboardList, UploadCloud, Trash2 } from 'lucide-react';
+import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle, Save, Database, ClipboardList, UploadCloud, Trash2, Users, Link, Filter, BarChart } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { GoogleGenAI } from '@google/genai';
 
@@ -150,6 +150,9 @@ export default function App() {
   const [studentSAInput, setStudentSAInput] = useState('');
   const [answeringStudentId, setAnsweringStudentId] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showTeacherDashboard, setShowTeacherDashboard] = useState(false);
+  const [dashboardClassFilter, setDashboardClassFilter] = useState('all');
+  const [dashboardTopicFilter, setDashboardTopicFilter] = useState('all');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -1119,6 +1122,10 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
               <ClipboardList size={18} />
               Quản lý 60 Câu hỏi
             </button>
+            <button onClick={() => setShowTeacherDashboard(true)} className="w-full bg-gradient-to-r from-teal-500 to-emerald-600 text-white py-3 rounded-xl text-sm font-bold shadow-md hover:from-teal-600 hover:to-emerald-700 hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 mb-3">
+              <BarChart size={18} />
+              Tiến độ học sinh
+            </button>
             <div className="flex gap-2">
               <button onClick={exportQuestionsJSON} className={`flex-1 border py-2 rounded-xl text-[11px] font-bold shadow-sm transition-all active:scale-95 flex flex-col items-center justify-center gap-1 ${isDarkMode ? 'bg-gray-700 text-indigo-400 border-indigo-500 hover:bg-gray-600' : 'bg-white text-[#4f46e5] border-indigo-200 hover:bg-indigo-50'}`}>
                 <Download size={14} /> Xuất CH
@@ -1489,6 +1496,132 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- TEACHER DASHBOARD MODAL --- */}
+      {showTeacherDashboard && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300">
+            <div className="p-5 border-b flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
+              <h2 className="text-2xl font-black text-gray-800 flex items-center gap-3">
+                <BarChart className="text-blue-600" /> Tiến độ học sinh trực tuyến
+              </h2>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.href);
+                    setAlertDialog("Đã copy link chia sẻ!");
+                  }}
+                  className="flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold transition-all shadow-md active:scale-95"
+                >
+                  <Link size={18} /> Chia sẻ link cho học sinh
+                </button>
+                <button onClick={() => setShowTeacherDashboard(false)} className="text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full p-2 transition-colors">
+                  <X size={28} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-4 border-b bg-white flex flex-wrap gap-4 items-center">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-gray-700">Lọc theo lớp:</span>
+                <select 
+                  value={dashboardClassFilter}
+                  onChange={(e) => setDashboardClassFilter(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="all">Tất cả các lớp</option>
+                  {Object.keys(classesData).map(cls => (
+                    <option key={cls} value={cls}>{cls}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-gray-700">Lọc theo BÀI:</span>
+                <select 
+                  value={dashboardTopicFilter}
+                  onChange={(e) => setDashboardTopicFilter(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="all">Tất cả bài tập</option>
+                  <option value="mc">BÀI TRẮC NGHIỆM</option>
+                  <option value="tf">BÀI ĐÚNG SAI</option>
+                  <option value="sa">BÀI TRẢ LỜI NGẮN</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100 text-gray-700 text-sm">
+                      <th className="p-4 font-bold border-b">Học sinh</th>
+                      <th className="p-4 font-bold border-b">Lớp</th>
+                      <th className="p-4 font-bold border-b">BÀI</th>
+                      <th className="p-4 font-bold border-b text-center">Điểm số</th>
+                      <th className="p-4 font-bold border-b text-center">Số câu đã làm</th>
+                      <th className="p-4 font-bold border-b">Nhận xét/Chấm điểm</th>
+                      <th className="p-4 font-bold border-b text-center">Cập nhật lúc</th>
+                      <th className="p-4 font-bold border-b text-center">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Mock Data for Teacher Dashboard based on current students */}
+                    {Object.entries(classesData)
+                      .filter(([cls]) => dashboardClassFilter === 'all' || cls === dashboardClassFilter)
+                      .flatMap(([cls, students]) => students.map(s => ({...s, cls})))
+                      .map((student, idx) => (
+                      <tr key={`${student.id}-${idx}`} className="border-b hover:bg-blue-50/50 transition-colors">
+                        <td className="p-4 font-semibold text-gray-800 flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
+                            {student.name.charAt(0).toUpperCase()}
+                          </div>
+                          {student.name}
+                        </td>
+                        <td className="p-4 text-gray-600 font-medium">{student.cls}</td>
+                        <td className="p-4 text-gray-600">
+                          <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-bold">
+                            {dashboardTopicFilter === 'all' ? 'TỔNG HỢP' : dashboardTopicFilter === 'mc' ? 'TRẮC NGHIỆM' : dashboardTopicFilter === 'tf' ? 'ĐÚNG SAI' : 'TRẢ LỜI NGẮN'}
+                          </span>
+                        </td>
+                        <td className="p-4 text-center">
+                          <span className="font-black text-lg text-blue-600">{student.score}</span>
+                        </td>
+                        <td className="p-4 text-center text-gray-600 font-medium">
+                          {Math.floor(student.score / 10)} / 60
+                        </td>
+                        <td className="p-4">
+                          <input 
+                            type="text" 
+                            placeholder="Nhập nhận xét..." 
+                            className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                          />
+                        </td>
+                        <td className="p-4 text-center text-gray-500 text-sm">
+                          Vừa xong
+                        </td>
+                        <td className="p-4 text-center">
+                          <button className="text-blue-500 hover:text-blue-700 font-semibold text-sm hover:underline">
+                            Chi tiết
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                    }
+                    {Object.keys(classesData).length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-gray-500 italic">
+                          Chưa có dữ liệu học sinh.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
