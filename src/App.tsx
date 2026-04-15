@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle, Save } from 'lucide-react';
+import { X, Play, Square, Settings, Shuffle, Volume2, VolumeX, Trophy, Star, Plus, Search, ChevronLeft, ChevronRight, FileText, Download, Upload, Moon, Sun, Check, CheckCircle, XCircle, Save, Database, ClipboardList, UploadCloud } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 // --- TRÌNH TẠO ÂM THANH (WEB AUDIO API) ---
@@ -360,6 +360,84 @@ export default function App() {
           setAlertDialog("Lỗi đọc file JSON. Vui lòng kiểm tra lại định dạng.");
         }
         if(jsonFileInputRef.current) jsonFileInputRef.current.value = '';
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const exportQuestionsJSON = () => {
+    const data = {
+      mc: questions,
+      tf: tfQuestions,
+      sa: saQuestions
+    };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", `Data_CauHoi_${new Date().toLocaleDateString('vi-VN').replace(/\//g, '-')}.json`);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
+
+  const questionsFileInputRef = useRef<HTMLInputElement>(null);
+  const documentFileInputRef = useRef<HTMLInputElement>(null);
+
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setAlertDialog(`Đang tải tài liệu "${file.name}" lên Cloud...`);
+
+    try {
+      // Upload to Supabase Storage bucket named 'documents'
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
+      const filePath = `uploads/${fileName}`;
+
+      const { data, error } = await supabase.storage
+        .from('documents')
+        .upload(filePath, file);
+
+      if (error) {
+        throw error;
+      }
+
+      const { data: publicUrlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+      
+      setAlertDialog(`Đã tải tài liệu "${file.name}" lên thành công! File đã được lưu trữ an toàn trên Supabase Storage.`);
+      
+    } catch (error: any) {
+      console.error("Upload error:", error);
+      setAlertDialog(`Lỗi tải lên: ${error.message || 'Vui lòng kiểm tra xem bạn đã tạo bucket "documents" trên Supabase chưa.'}`);
+    } finally {
+      setIsUploading(false);
+      if (documentFileInputRef.current) documentFileInputRef.current.value = '';
+    }
+  };
+
+  const importQuestionsJSON = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const json = JSON.parse(e.target?.result as string);
+          if (json && json.mc && json.tf && json.sa) {
+            setQuestions(json.mc);
+            setTfQuestions(json.tf);
+            setSaQuestions(json.sa);
+            setAlertDialog("Nhập dữ liệu câu hỏi thành công!");
+          } else {
+            setAlertDialog("Cấu trúc file JSON câu hỏi không hợp lệ!");
+          }
+        } catch (err) {
+          setAlertDialog("Lỗi đọc file JSON. Vui lòng kiểm tra lại định dạng.");
+        }
+        if(questionsFileInputRef.current) questionsFileInputRef.current.value = '';
       };
       reader.readAsText(file);
     }
@@ -747,11 +825,12 @@ export default function App() {
               <button onClick={resetScores} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-red-600 hover:shadow-lg active:scale-95 transition-all">
                 Reset Bảng Điểm
               </button>
+              <button onClick={() => documentFileInputRef.current?.click()} disabled={isUploading} className="bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-indigo-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-70">
+                <UploadCloud size={16}/> {isUploading ? 'Đang tải...' : 'Tải tài liệu'}
+              </button>
+              <input type="file" className="hidden" ref={documentFileInputRef} onChange={handleDocumentUpload} />
               <button onClick={() => { shuffleBalls(); shuffleTFBalls(); shuffleSABalls(); }} className="bg-green-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-green-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
                 <Shuffle size={16}/> Trộn Bóng
-              </button>
-              <button onClick={() => setShowAdmin(true)} className="bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-purple-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
-                <Settings size={16}/> Quản lý Câu hỏi
               </button>
               <button onClick={toggleBGM} className={`px-4 py-2 rounded-xl text-sm font-semibold shadow-md active:scale-95 transition-all flex items-center gap-2 ${bgmPlaying ? 'bg-yellow-500 hover:bg-yellow-600 text-white' : (isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700')}`}>
                 {bgmPlaying ? <Volume2 size={16}/> : <VolumeX size={16}/>} Nhạc Nền
@@ -887,36 +966,60 @@ export default function App() {
           </div>
         </div>
 
-        {/* BẢNG XẾP HẠNG TOP 3 (Absolute Right on Large Screens, Hidden/Bottom on Small) */}
-        <div className="hidden lg:block absolute top-6 right-6 w-64 bg-gradient-to-b from-[#6e3b1c] to-[#5a2e12] rounded-3xl shadow-2xl overflow-hidden border-4 border-[#8b4513] z-20 transform transition-transform hover:scale-105">
-            <div className="bg-gradient-to-r from-[#ffae00] to-[#ff8c00] text-amber-900 font-black text-center py-3 flex items-center justify-center gap-2 shadow-inner">
-                <Trophy size={22} className="drop-shadow-sm" /> BẢNG VÀNG TOP 3
+        {/* BẢNG XẾP HẠNG TOP 3 & DỮ LIỆU HỆ THỐNG (Absolute Right on Large Screens, Hidden/Bottom on Small) */}
+        <div className="hidden lg:flex flex-col gap-4 absolute top-6 right-6 w-64 z-20">
+          {/* BẢNG XẾP HẠNG TOP 3 */}
+          <div className="bg-gradient-to-b from-[#6e3b1c] to-[#5a2e12] rounded-3xl shadow-2xl overflow-hidden border-4 border-[#8b4513] transform transition-transform hover:scale-105">
+              <div className="bg-gradient-to-r from-[#ffae00] to-[#ff8c00] text-amber-900 font-black text-center py-3 flex items-center justify-center gap-2 shadow-inner">
+                  <Trophy size={22} className="drop-shadow-sm" /> BẢNG VÀNG TOP 3
+              </div>
+              <div className="flex justify-center -mt-4 relative z-10 drop-shadow-lg">
+                  <Star size={40} fill="#FFD700" color="#B8860B" className="transform -rotate-12" />
+                  <Star size={52} fill="#FFD700" color="#B8860B" className="-mt-5 mx-1 z-10" />
+                  <Star size={40} fill="#FFD700" color="#B8860B" className="transform rotate-12" />
+              </div>
+              <div className="p-5 pt-3 text-white font-medium flex flex-col gap-3">
+                  {top3Students.length === 0 ? (
+                      <div className="text-center text-amber-200/50 text-sm py-4 italic">Chưa có dữ liệu thi đấu</div>
+                  ) : (
+                      top3Students.map((student, idx) => (
+                          <div key={student.id} className="flex justify-between items-center border-b border-[#8b4513]/50 pb-2 last:border-0">
+                              <span className="truncate w-36 flex items-center gap-2">
+                                  <span className={`
+                                    flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
+                                    ${idx === 0 ? 'bg-yellow-400 text-yellow-900' : idx === 1 ? 'bg-gray-300 text-gray-800' : 'bg-amber-600 text-amber-100'}
+                                  `}>
+                                    {idx + 1}
+                                  </span>
+                                  {student.name}
+                              </span>
+                              <span className="text-yellow-400 font-black text-lg drop-shadow-md">{student.score}</span>
+                          </div>
+                      ))
+                  )}
+              </div>
+          </div>
+
+          {/* System Data Block */}
+          <div className={`rounded-3xl p-4 shadow-2xl border-4 transform transition-transform hover:scale-105 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#f0f4ff] border-blue-200'}`}>
+            <div className={`flex items-center justify-center gap-2 mb-3 font-black ${isDarkMode ? 'text-gray-200' : 'text-blue-900'}`}>
+              <Database size={20} />
+              <span>DỮ LIỆU HỆ THỐNG</span>
             </div>
-            <div className="flex justify-center -mt-4 relative z-10 drop-shadow-lg">
-                <Star size={40} fill="#FFD700" color="#B8860B" className="transform -rotate-12" />
-                <Star size={52} fill="#FFD700" color="#B8860B" className="-mt-5 mx-1 z-10" />
-                <Star size={40} fill="#FFD700" color="#B8860B" className="transform rotate-12" />
+            <button onClick={() => setShowAdmin(true)} className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 rounded-xl text-sm font-bold shadow-md hover:from-indigo-600 hover:to-purple-700 hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 mb-3">
+              <ClipboardList size={18} />
+              Quản lý 60 Câu hỏi
+            </button>
+            <div className="flex gap-2">
+              <button onClick={exportQuestionsJSON} className={`flex-1 border py-2 rounded-xl text-[11px] font-bold shadow-sm transition-all active:scale-95 flex flex-col items-center justify-center gap-1 ${isDarkMode ? 'bg-gray-700 text-indigo-400 border-indigo-500 hover:bg-gray-600' : 'bg-white text-[#4f46e5] border-indigo-200 hover:bg-indigo-50'}`}>
+                <Download size={14} /> Xuất CH
+              </button>
+              <button onClick={() => questionsFileInputRef.current?.click()} className={`flex-1 border py-2 rounded-xl text-[11px] font-bold shadow-sm transition-all active:scale-95 flex flex-col items-center justify-center gap-1 ${isDarkMode ? 'bg-gray-700 text-indigo-400 border-indigo-500 hover:bg-gray-600' : 'bg-white text-[#4f46e5] border-indigo-200 hover:bg-indigo-50'}`}>
+                <Upload size={14} /> Nhập CH
+              </button>
+              <input type="file" accept=".json" className="hidden" ref={questionsFileInputRef} onChange={importQuestionsJSON} />
             </div>
-            <div className="p-5 pt-3 text-white font-medium flex flex-col gap-3">
-                {top3Students.length === 0 ? (
-                    <div className="text-center text-amber-200/50 text-sm py-4 italic">Chưa có dữ liệu thi đấu</div>
-                ) : (
-                    top3Students.map((student, idx) => (
-                        <div key={student.id} className="flex justify-between items-center border-b border-[#8b4513]/50 pb-2 last:border-0">
-                            <span className="truncate w-36 flex items-center gap-2">
-                                <span className={`
-                                  flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
-                                  ${idx === 0 ? 'bg-yellow-400 text-yellow-900' : idx === 1 ? 'bg-gray-300 text-gray-800' : 'bg-amber-600 text-amber-100'}
-                                `}>
-                                  {idx + 1}
-                                </span>
-                                {student.name}
-                            </span>
-                            <span className="text-yellow-400 font-black text-lg drop-shadow-md">{student.score}</span>
-                        </div>
-                    ))
-                )}
-            </div>
+          </div>
         </div>
 
         {/* Footer Tác giả */}
