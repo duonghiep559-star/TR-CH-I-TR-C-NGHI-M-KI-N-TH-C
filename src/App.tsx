@@ -450,7 +450,7 @@ Vui lòng trả về kết quả dưới định dạng JSON chính xác như sa
     { "id": 1, "text": "Câu hỏi trả lời ngắn?", "correctAnswer": "Đáp án" }
   ]
 }
-Tạo tối đa 10 câu trắc nghiệm, 5 câu đúng/sai và 5 câu trả lời ngắn. Đảm bảo JSON hợp lệ, không có markdown formatting (không có \`\`\`json).`;
+YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đúng/sai và 60 câu trả lời ngắn (tổng cộng 180 câu). Nếu tài liệu ngắn, hãy khai thác mọi chi tiết nhỏ nhất, ví dụ, định nghĩa, hoặc suy luận logic để đảm bảo đủ số lượng. Đảm bảo JSON hợp lệ, không có markdown formatting (không có \`\`\`json).`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
