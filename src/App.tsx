@@ -101,14 +101,26 @@ const initialSAQuestions: SAQuestion[] = Array.from({ length: 60 }, (_, i) => ({
 
 export default function App() {
   // States: Danh sách & Lớp học
-  const [classesData, setClassesData] = useState<Record<string, Student[]>>({
-    '9B': [
-      { id: '1', name: 'Nguyễn Văn A', score: 20 },
-      { id: '2', name: 'Trần Thị B', score: 10 },
-      { id: '3', name: 'Lê Hoàng C', score: 30 },
-      { id: '4', name: 'Phạm Thị D', score: 10 },
-    ]
+  const [classesData, setClassesData] = useState<Record<string, Student[]>>(() => {
+    const saved = localStorage.getItem('classesData');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      '9B': [
+        { id: '1', name: 'Nguyễn Văn A', score: 20 },
+        { id: '2', name: 'Trần Thị B', score: 10 },
+        { id: '3', name: 'Lê Hoàng C', score: 30 },
+        { id: '4', name: 'Phạm Thị D', score: 10 },
+      ]
+    };
   });
+
+  useEffect(() => {
+    localStorage.setItem('classesData', JSON.stringify(classesData));
+  }, [classesData]);
   const [currentClass, setCurrentClass] = useState('9B');
   const [newClassName, setNewClassName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -184,18 +196,23 @@ export default function App() {
         const { data: realtimeData, error: realtimeError } = await supabase.from('realtime_scores').select('*');
         
         if (realtimeData && realtimeData.length > 0) {
-          const newClassesData: Record<string, Student[]> = {};
-          realtimeData.forEach(row => {
-            if (!newClassesData[row.class_name]) newClassesData[row.class_name] = [];
-            newClassesData[row.class_name].push({
-              id: row.id,
-              name: row.student_name,
-              score: row.score
+          setClassesData(prev => {
+            const newClassesData: Record<string, Student[]> = { ...prev };
+            // Clear existing students to avoid duplicates, but keep class keys
+            Object.keys(newClassesData).forEach(k => newClassesData[k] = []);
+            
+            realtimeData.forEach(row => {
+              if (!newClassesData[row.class_name]) newClassesData[row.class_name] = [];
+              newClassesData[row.class_name].push({
+                id: row.id,
+                name: row.student_name,
+                score: row.score
+              });
             });
+            return newClassesData;
           });
-          setClassesData(newClassesData);
-          if (!newClassesData[currentClass] && Object.keys(newClassesData).length > 0) {
-            setCurrentClass(Object.keys(newClassesData)[0]);
+          if (!classesData[currentClass] && Object.keys(classesData).length > 0) {
+            setCurrentClass(Object.keys(classesData)[0]);
           }
         } else {
           // Fallback to old classes and students
@@ -203,18 +220,15 @@ export default function App() {
           const { data: students } = await supabase.from('students').select('*');
           
           if (classes && students) {
-            const newClassesData: Record<string, Student[]> = {};
-            classes.forEach(c => {
-              newClassesData[c.name] = students
-                .filter(s => s.class_id === c.id)
-                .map(s => ({ id: s.id, name: s.name, score: s.score, class_id: s.class_id }));
+            setClassesData(prev => {
+              const newClassesData: Record<string, Student[]> = { ...prev };
+              classes.forEach(c => {
+                newClassesData[c.name] = students
+                  .filter(s => s.class_id === c.id)
+                  .map(s => ({ id: s.id, name: s.name, score: s.score, class_id: s.class_id }));
+              });
+              return newClassesData;
             });
-            if (Object.keys(newClassesData).length > 0) {
-              setClassesData(newClassesData);
-              if (!newClassesData[currentClass] && Object.keys(newClassesData).length > 0) {
-                setCurrentClass(Object.keys(newClassesData)[0]);
-              }
-            }
           }
         }
 
@@ -485,6 +499,26 @@ export default function App() {
           const json = JSON.parse(e.target?.result as string);
           if (typeof json === 'object' && json !== null && !Array.isArray(json)) {
             setClassesData(json);
+            
+            // Sync imported JSON to Supabase
+            const upsertData: any[] = [];
+            Object.entries(json).forEach(([className, students]) => {
+               if (Array.isArray(students)) {
+                 students.forEach(s => {
+                    upsertData.push({
+                      id: s.id,
+                      student_name: s.name,
+                      class_name: className,
+                      score: s.score || 0,
+                      updated_at: new Date().toISOString()
+                    });
+                 });
+               }
+            });
+            if (upsertData.length > 0) {
+               supabase.from('realtime_scores').upsert(upsertData).catch(console.error);
+            }
+
             const keys = Object.keys(json);
             if (keys.length > 0 && !keys.includes(currentClass)) {
               setCurrentClass(keys[0]);
