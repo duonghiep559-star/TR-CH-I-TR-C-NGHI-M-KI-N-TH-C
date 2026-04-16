@@ -556,6 +556,41 @@ export default function App() {
 
   const [isUploading, setIsUploading] = useState(false);
 
+  const handleDeleteDocument = () => {
+    setConfirmDialog({
+      message: "Bạn có chắc chắn muốn xóa tài liệu hiện tại? Toàn bộ 180 câu hỏi sẽ bị xóa và khôi phục về trạng thái mặc định.",
+      onConfirm: async () => {
+        setQuestions(initialQuestions);
+        setTfQuestions(initialTFQuestions);
+        setSaQuestions(initialSAQuestions);
+        setConfirmDialog(null);
+        setAlertDialog("Đang xóa dữ liệu trên hệ thống...");
+        
+        try {
+          // Clear Supabase tables
+          await supabase.from('questions_mc').delete().neq('id', 0);
+          await supabase.from('questions_tf').delete().neq('id', 0);
+          await supabase.from('questions_sa').delete().neq('id', 0);
+          
+          // Upsert initial questions to Supabase
+          const mcPayload = initialQuestions.map(q => ({ id: q.id, text: q.text, options: q.options, correct_index: q.correctIndex }));
+          await supabase.from('questions_mc').upsert(mcPayload);
+
+          const tfPayload = initialTFQuestions.map(q => ({ id: q.id, text: q.text, is_true: q.isTrue }));
+          await supabase.from('questions_tf').upsert(tfPayload);
+
+          const saPayload = initialSAQuestions.map(q => ({ id: q.id, text: q.text, correct_answer: q.correctAnswer }));
+          await supabase.from('questions_sa').upsert(saPayload);
+          
+          setAlertDialog("Đã xóa tài liệu và khôi phục câu hỏi mặc định thành công!");
+        } catch (error: any) {
+          console.error("Error deleting document data:", error);
+          setAlertDialog("Có lỗi xảy ra khi xóa dữ liệu trên hệ thống.");
+        }
+      }
+    });
+  };
+
   const handleDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1214,6 +1249,9 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
               </button>
               <button onClick={() => documentFileInputRef.current?.click()} disabled={isUploading} className="bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-indigo-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-70">
                 <UploadCloud size={16}/> {isUploading ? 'Đang tải...' : 'Tải tài liệu'}
+              </button>
+              <button onClick={handleDeleteDocument} disabled={isUploading} className="bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-rose-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-70">
+                <Trash2 size={16}/> Xóa tài liệu
               </button>
               <input type="file" className="hidden" ref={documentFileInputRef} onChange={handleDocumentUpload} />
               <button onClick={() => { shuffleBalls(); shuffleTFBalls(); shuffleSABalls(); }} className="bg-green-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-green-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
