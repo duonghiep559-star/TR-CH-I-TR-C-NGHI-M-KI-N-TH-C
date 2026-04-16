@@ -198,16 +198,23 @@ export default function App() {
         if (realtimeData && realtimeData.length > 0) {
           setClassesData(prev => {
             const newClassesData: Record<string, Student[]> = { ...prev };
-            // Clear existing students to avoid duplicates, but keep class keys
-            Object.keys(newClassesData).forEach(k => newClassesData[k] = []);
             
             realtimeData.forEach(row => {
               if (!newClassesData[row.class_name]) newClassesData[row.class_name] = [];
-              newClassesData[row.class_name].push({
-                id: row.id,
-                name: row.student_name,
-                score: row.score
-              });
+              const existingIndex = newClassesData[row.class_name].findIndex(s => s.id === row.id);
+              if (existingIndex >= 0) {
+                newClassesData[row.class_name][existingIndex] = {
+                  ...newClassesData[row.class_name][existingIndex],
+                  name: row.student_name,
+                  score: row.score
+                };
+              } else {
+                newClassesData[row.class_name].push({
+                  id: row.id,
+                  name: row.student_name,
+                  score: row.score
+                });
+              }
             });
             return newClassesData;
           });
@@ -223,9 +230,16 @@ export default function App() {
             setClassesData(prev => {
               const newClassesData: Record<string, Student[]> = { ...prev };
               classes.forEach(c => {
-                newClassesData[c.name] = students
-                  .filter(s => s.class_id === c.id)
-                  .map(s => ({ id: s.id, name: s.name, score: s.score, class_id: s.class_id }));
+                if (!newClassesData[c.name]) newClassesData[c.name] = [];
+                const classStudents = students.filter(s => s.class_id === c.id);
+                classStudents.forEach(s => {
+                  const existingIndex = newClassesData[c.name].findIndex(existing => existing.id === s.id);
+                  if (existingIndex >= 0) {
+                     newClassesData[c.name][existingIndex].score = s.score;
+                  } else {
+                     newClassesData[c.name].push({ id: s.id, name: s.name, score: s.score, class_id: s.class_id });
+                  }
+                });
               });
               return newClassesData;
             });
