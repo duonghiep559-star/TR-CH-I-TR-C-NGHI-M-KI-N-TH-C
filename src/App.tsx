@@ -78,6 +78,8 @@ interface Student {
   name: string;
   score: number;
   class_id?: string;
+  comment?: string;
+  updated_at?: string;
 }
 
 const initialQuestions: Question[] = Array.from({ length: 60 }, (_, i) => ({
@@ -206,13 +208,17 @@ export default function App() {
                 newClassesData[row.class_name][existingIndex] = {
                   ...newClassesData[row.class_name][existingIndex],
                   name: row.student_name,
-                  score: row.score
+                  score: row.score,
+                  comment: row.comment !== undefined ? row.comment : newClassesData[row.class_name][existingIndex].comment,
+                  updated_at: row.updated_at !== undefined ? row.updated_at : newClassesData[row.class_name][existingIndex].updated_at
                 };
               } else {
                 newClassesData[row.class_name].push({
                   id: row.id,
                   name: row.student_name,
-                  score: row.score
+                  score: row.score,
+                  comment: row.comment,
+                  updated_at: row.updated_at
                 });
               }
             });
@@ -307,13 +313,17 @@ export default function App() {
               newData[className][studentIndex] = {
                 ...newData[className][studentIndex],
                 score: record.score,
-                name: record.student_name
+                name: record.student_name,
+                comment: record.comment,
+                updated_at: record.updated_at
               };
             } else {
               newData[className].push({
                 id: record.id,
                 name: record.student_name,
-                score: record.score
+                score: record.score,
+                comment: record.comment,
+                updated_at: record.updated_at
               });
             }
             return newData;
@@ -950,6 +960,65 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+  };
+
+  const handleCommentChange = (studentId: string, className: string, newComment: string) => {
+    // Update local state right away for snappy UI
+    setClassesData(prev => {
+      const newData = { ...prev };
+      if (newData[className]) {
+        const idx = newData[className].findIndex(s => s.id === studentId);
+        if (idx !== -1) {
+          newData[className][idx] = {
+            ...newData[className][idx],
+            comment: newComment,
+            // Don't update time yet, do it on blur to reduce noise
+          };
+        }
+      }
+      return newData;
+    });
+  };
+
+  const syncCommentToSupabase = async (studentId: string, className: string) => {
+    const studentInfo = classesData[className]?.find(s => s.id === studentId);
+    if (!studentInfo) return;
+
+    const updatedTime = new Date().toISOString();
+
+    // Update local updated_at
+    setClassesData(prev => {
+      const newData = { ...prev };
+      if (newData[className]) {
+        const idx = newData[className].findIndex(s => s.id === studentId);
+        if (idx !== -1) {
+          newData[className][idx] = {
+            ...newData[className][idx],
+            updated_at: updatedTime
+          };
+        }
+      }
+      return newData;
+    });
+
+    // Sync to Supabase
+    try {
+      const updatePayload = {
+        id: studentId,
+        student_name: studentInfo.name, // required for valid row
+        class_name: className,
+        score: studentInfo.score,
+        comment: studentInfo.comment || '',
+        updated_at: updatedTime
+      };
+
+      const { error } = await supabase.from('realtime_scores').upsert(updatePayload);
+      if (error) {
+        console.error("Lỗi cập nhật nhận xét:", error);
+      }
+    } catch (err) {
+      console.error("Exception during comment update:", err);
+    }
   };
 
   if (isAuthChecking) {
@@ -1930,11 +1999,14 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                           <input 
                             type="text" 
                             placeholder="Nhập nhận xét..." 
+                            value={student.comment || ''}
+                            onChange={(e) => handleCommentChange(student.id, student.cls, e.target.value)}
+                            onBlur={() => syncCommentToSupabase(student.id, student.cls)}
                             className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
                           />
                         </td>
                         <td className="p-4 text-center text-gray-500 text-sm">
-                          Vừa xong
+                          {student.updated_at ? new Date(student.updated_at).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'}) : 'Chưa cập nhật'}
                         </td>
                         <td className="p-4 text-center">
                           <button className="text-blue-500 hover:text-blue-700 font-semibold text-sm hover:underline">
