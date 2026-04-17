@@ -173,11 +173,13 @@ export default function App() {
 
   // --- AUTH STATE ---
   const [user, setUser] = useState<User | null>(null);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'reset'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [showPasswordRecovery, setShowPasswordRecovery] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
 
   // Define admin check
   const isAdmin = user?.email === 'hiepdt.c2binhan@gmail.com';
@@ -191,8 +193,11 @@ export default function App() {
     });
 
     // Listen for changes on auth state
-    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowPasswordRecovery(true);
+      }
     });
 
     const fetchSupabaseData = async () => {
@@ -989,21 +994,34 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
     try {
       if (authMode === 'register') {
         const { error } = await supabase.auth.signUp({
-          email: authEmail,
+          email: authEmail.trim(),
           password: authPassword,
         });
         if (error) throw error;
         setAlertDialog('Đăng ký thành công! Vui lòng kiểm tra email để xác thực (nếu có yêu cầu) hoặc đăng nhập.');
         setAuthMode('login');
-      } else {
+      } else if (authMode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({
-          email: authEmail,
+          email: authEmail.trim(),
           password: authPassword,
         });
         if (error) throw error;
+      } else if (authMode === 'reset') {
+        const { error } = await supabase.auth.resetPasswordForEmail(authEmail.trim(), {
+          redirectTo: window.location.origin,
+        });
+        if (error) throw error;
+        setAlertDialog('Đã gửi email khôi phục mật khẩu. Vui lòng kiểm tra hộp thư email của bạn (bao gồm cả thư rác/spam).');
+        setAuthMode('login');
       }
     } catch (error: any) {
-      setAlertDialog(error.message || 'Có lỗi xảy ra trong quá trình xác thực.');
+      if (error.message === 'User already registered') {
+        setAlertDialog('Tài khoản email này đã được đăng ký từ trước. Bạn chỉ cần chọn "Đăng nhập" thay vì đăng ký. Nếu quên mật khẩu, hãy bấm "Quên mật khẩu".');
+      } else if (error.message.includes('Invalid login credentials')) {
+         setAlertDialog('Sai email hoặc mật khẩu. Vui lòng thử lại. Nếu quên mật khẩu, hãy bấm "Quên mật khẩu".');
+      } else {
+        setAlertDialog(error.message || 'Có lỗi xảy ra trong quá trình xác thực.');
+      }
     } finally {
       setAuthLoading(false);
     }
@@ -1076,7 +1094,70 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
     return <div className="flex h-screen items-center justify-center bg-gray-100">Đang tải...</div>;
   }
 
-  if (!user) {
+  if (!user || showPasswordRecovery) {
+    if (showPasswordRecovery) {
+       return (
+        <div className="flex h-screen items-center justify-center bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0]">
+          <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in duration-300">
+             <div className="flex justify-center mb-6">
+              <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center">
+                <Users size={32} />
+              </div>
+            </div>
+            <h2 className="text-3xl font-black text-center mb-8 text-transparent bg-clip-text bg-gradient-to-r from-purple-700 to-blue-600">
+              ĐỔI MẬT KHẨU MỚI
+            </h2>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              setAuthLoading(true);
+              const { error } = await supabase.auth.updateUser({ password: newPassword });
+              setAuthLoading(false);
+              if (error) {
+                setAlertDialog(error.message);
+              } else {
+                setAlertDialog('Đổi mật khẩu thành công! Bạn có thể tiếp tục sử dụng ứng dụng.');
+                setShowPasswordRecovery(false);
+              }
+            }} className="flex flex-col gap-5">
+               <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Mật khẩu mới</label>
+                  <input 
+                    type="password" 
+                    required
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-500/20 transition-all"
+                    placeholder="Nhập mật khẩu mới..."
+                  />
+                </div>
+                <button 
+                  type="submit" 
+                  disabled={authLoading}
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-3.5 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-70 mt-4"
+                >
+                  {authLoading ? 'Đang lưu...' : 'Lưu mật khẩu mới'}
+                </button>
+            </form>
+            {/* --- ALERT DIALOG (Recovery Auth) --- */}
+            {alertDialog && (
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+                <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center animate-in fade-in zoom-in duration-200">
+                  <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <FileText size={32} />
+                  </div>
+                  <h3 className="text-xl font-bold mb-2 text-gray-800">Thông báo</h3>
+                  <p className="text-gray-600 mb-8">{alertDialog}</p>
+                  <div className="flex justify-center">
+                    <button onClick={() => setAlertDialog('')} className="w-full py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 font-semibold text-white shadow-md transition-colors">Đã hiểu</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+       );
+    }
+
     return (
       <div className="flex h-screen items-center justify-center bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0]">
         <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in duration-300">
@@ -1086,7 +1167,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
             </div>
           </div>
           <h2 className="text-3xl font-black text-center mb-8 text-transparent bg-clip-text bg-gradient-to-r from-purple-700 to-blue-600">
-            {authMode === 'login' ? 'ĐĂNG NHẬP' : 'ĐĂNG KÝ TÀI KHOẢN'}
+            {authMode === 'login' ? 'ĐĂNG NHẬP' : authMode === 'register' ? 'ĐĂNG KÝ TÀI KHOẢN' : 'KHÔI PHỤC MẬT KHẨU'}
           </h2>
           <form onSubmit={handleAuth} className="flex flex-col gap-5">
             <div>
@@ -1100,33 +1181,51 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                 placeholder="Nhập email..."
               />
             </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">Mật khẩu</label>
-              <input 
-                type="password" 
-                required
-                value={authPassword}
-                onChange={e => setAuthPassword(e.target.value)}
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-500/20 transition-all"
-                placeholder="Nhập mật khẩu..."
-              />
-            </div>
+            {authMode !== 'reset' && (
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Mật khẩu</label>
+                <input 
+                  type="password" 
+                  required
+                  value={authPassword}
+                  onChange={e => setAuthPassword(e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-500/20 transition-all"
+                  placeholder="Nhập mật khẩu..."
+                />
+              </div>
+            )}
             <button 
               type="submit" 
               disabled={authLoading}
               className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-70 mt-4"
             >
-              {authLoading ? 'Đang xử lý...' : (authMode === 'login' ? 'Đăng nhập' : 'Đăng ký')}
+              {authLoading ? 'Đang xử lý...' : (authMode === 'login' ? 'Đăng nhập' : authMode === 'register' ? 'Đăng ký' : 'Gửi email khôi phục')}
             </button>
           </form>
-          <div className="mt-8 text-center text-sm font-medium text-gray-600">
-            {authMode === 'login' ? 'Chưa có tài khoản? ' : 'Đã có tài khoản? '}
-            <button 
-              onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-              className="text-purple-600 font-bold hover:text-purple-800 hover:underline transition-colors"
-            >
-              {authMode === 'login' ? 'Đăng ký ngay' : 'Đăng nhập'}
-            </button>
+          
+          <div className="mt-6 flex flex-col gap-3 text-center text-sm font-medium text-gray-600">
+            {authMode === 'login' && (
+              <button 
+                onClick={() => setAuthMode('reset')}
+                className="text-gray-500 font-semibold hover:text-gray-800 hover:underline transition-colors"
+              >
+                Quên mật khẩu?
+              </button>
+            )}
+            
+            <div className="flex items-center justify-center gap-1">
+              {authMode === 'login' ? 'Chưa có tài khoản?' : (authMode === 'register' ? 'Đã có tài khoản?' : 'Trở về đăng nhập')}
+              <button 
+                onClick={() => {
+                  setAuthMode(authMode === 'login' ? 'register' : 'login');
+                  setAuthEmail('');
+                  setAuthPassword('');
+                }}
+                className="text-purple-600 font-bold hover:text-purple-800 hover:underline transition-colors ml-1"
+              >
+                {authMode === 'login' ? 'Đăng ký ngay' : 'Đăng nhập'}
+              </button>
+            </div>
           </div>
         </div>
         
