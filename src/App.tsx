@@ -1271,12 +1271,12 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
   }
 
   return (
-    <div className={`flex h-screen font-sans overflow-hidden transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0] text-gray-800'}`}>
+    <div className={`flex flex-col lg:flex-row w-full min-h-screen lg:h-screen font-sans overflow-y-auto lg:overflow-hidden transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-[#ebdffa] to-[#d4c4f0] text-gray-800'}`}>
       
       {/* CỘT TRÁI: DANH SÁCH HỌC SINH */}
-      <div className="w-[320px] h-full flex-shrink-0 p-4 z-10 relative flex flex-col">
+      <div className="w-full lg:w-[320px] h-[50vh] min-h-[400px] lg:h-full lg:min-h-0 flex-shrink-0 p-2 lg:p-4 z-10 relative flex flex-col">
         {/* Background hình bảng gỗ */}
-        <div className={`flex-1 rounded-3xl border-[10px] shadow-2xl flex flex-col overflow-hidden relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#f4e6c3] border-[#c18c5d]'}`}>
+        <div className={`flex-1 rounded-3xl border-[6px] lg:border-[10px] shadow-2xl flex flex-col overflow-hidden relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#f4e6c3] border-[#c18c5d]'}`}>
           
           {/* Class Header */}
           <div className={`p-4 flex flex-col items-center border-b relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-[#fff3d4] border-[#e6d0a7]'}`}>
@@ -1459,14 +1459,14 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
         </div>
       </div>
 
-      {/* PHẦN GIỮA: MÀN HÌNH CHÍNH */}
-      <div className="flex-1 flex flex-col p-4 relative h-full overflow-hidden">
+      {/* PHẦN GIỮA: MÀN HÌNH CHÍNH & BẢNG XẾP HẠNG/SYSTEM DATA ON MOBILE */}
+      <div className="flex-1 p-2 lg:p-4 relative w-full max-w-full lg:h-full lg:overflow-hidden lg:flex lg:flex-col min-h-0">
         
         {/* Header Control */}
-        <div className="flex flex-wrap justify-between items-start mb-4 pt-2 pl-4 gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 bg-white rounded-2xl shadow-lg flex items-center justify-center p-2 border border-gray-100">
+        <div className="flex flex-col lg:flex-row flex-wrap justify-between items-start mb-4 pt-2 lg:pl-4 gap-2 lg:gap-4 w-full flex-shrink-0">
+          <div className="flex-1 w-full flex flex-col">
+            <div className="flex items-center gap-3 lg:gap-4 mb-4">
+              <div className="w-12 h-12 lg:w-16 lg:h-16 bg-white rounded-2xl shadow-lg flex items-center justify-center p-2 border border-gray-100 flex-shrink-0">
                 <img 
                   src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/React-icon.svg/1200px-React-icon.svg.png" 
                   alt="Logo" 
@@ -1474,13 +1474,13 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                   onError={(e) => (e.currentTarget.style.display = 'none')}
                 />
               </div>
-              <h1 className="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-700 to-blue-600 tracking-tight drop-shadow-sm">
+              <h1 className="text-2xl md:text-3xl lg:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-700 to-blue-600 tracking-tight drop-shadow-sm leading-tight">
                 GAMES LEO NÚI OLYMPIA
               </h1>
             </div>
             
-            <div className={`flex flex-wrap items-center gap-3 text-sm font-medium p-2 rounded-2xl backdrop-blur-sm border shadow-sm inline-flex transition-colors duration-300 ${isDarkMode ? 'bg-gray-800/50 border-gray-700/40' : 'bg-white/50 border-white/40'}`}>
-              <span className={`ml-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Thời gian (giây):</span>
+            <div className={`flex flex-wrap items-center gap-3 text-sm font-medium p-2 rounded-2xl backdrop-blur-sm border shadow-sm inline-flex transition-colors duration-300 w-fit ${isDarkMode ? 'bg-gray-800/50 border-gray-700/40' : 'bg-white/50 border-white/40'}`}>
+              <span className={`ml-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Thời gian:</span>
               <input 
                 type="number" 
                 value={timerInput}
@@ -1490,7 +1490,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
               />
               <button 
                 onClick={startTimer}
-                className="bg-blue-500 text-white px-4 py-1.5 rounded-lg shadow-md hover:bg-blue-600 hover:shadow-lg active:scale-95 transition-all font-semibold"
+                className="bg-blue-500 text-white px-4 py-1.5 rounded-lg shadow-md hover:bg-blue-600 hover:shadow-lg active:scale-95 transition-all font-semibold whitespace-nowrap"
               >
                 Bắt đầu
               </button>
@@ -1532,10 +1532,10 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
           </div>
         </div>
 
-        {/* Bảng 60 Viên cầu */}
-        <div className="flex-1 flex flex-col items-center justify-start pr-0 lg:pr-64 pb-4 overflow-y-auto custom-scrollbar">
+        {/* Bảng 60 Viên cầu - Wrapper */}
+        <div className="w-full lg:max-w-full lg:pr-[17rem] pb-4 lg:flex-1 lg:overflow-y-auto lg:overflow-x-hidden overflow-visible custom-scrollbar">
           
-          <div className={`w-full max-w-5xl mb-4 mt-2 px-4 py-2 rounded-xl shadow-sm border text-center font-bold text-lg tracking-wide ${isDarkMode ? 'bg-gray-800 border-gray-700 text-purple-400' : 'bg-white/80 border-white text-purple-800'}`}>
+          <div className={`w-full max-w-5xl mx-auto lg:mx-0 mb-4 mt-2 px-4 py-2 rounded-xl shadow-sm border text-center font-bold text-lg tracking-wide ${isDarkMode ? 'bg-gray-800 border-gray-700 text-purple-400' : 'bg-white/80 border-white text-purple-800'}`}>
             BÀI TẬP 1: TRẮC NGHIỆM (60 CÂU)
           </div>
 
@@ -1656,8 +1656,8 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
           </div>
         </div>
 
-        {/* BẢNG XẾP HẠNG TOP 3 & DỮ LIỆU HỆ THỐNG (Absolute Right on Large Screens, Hidden/Bottom on Small) */}
-        <div className="hidden lg:flex flex-col gap-4 absolute top-6 right-6 w-64 z-20">
+        {/* BẢNG XẾP HẠNG TOP 3 & DỮ LIỆU HỆ THỐNG (Mobile: Below Game, Desktop: Absolute Right) */}
+        <div className="flex flex-col gap-4 mt-8 lg:mt-0 lg:absolute lg:top-6 lg:right-6 w-full lg:w-64 z-20 flex-shrink-0 self-center lg:self-auto h-auto px-2 lg:px-0 mb-8 lg:mb-0">
           {/* BẢNG XẾP HẠNG TOP 3 */}
           <div className="bg-gradient-to-b from-[#6e3b1c] to-[#5a2e12] rounded-3xl shadow-2xl overflow-hidden border-4 border-[#8b4513] transform transition-transform hover:scale-105">
               <div className="bg-gradient-to-r from-[#ffae00] to-[#ff8c00] text-amber-900 font-black text-center py-3 flex items-center justify-center gap-2 shadow-inner">
@@ -1725,7 +1725,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
         </div>
 
         {/* Footer Tác giả */}
-        <div className={`absolute bottom-2 left-1/2 transform -translate-x-1/2 text-sm font-medium z-10 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+        <div className={`mt-4 w-full text-center text-sm font-medium pb-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
           Tác giả: Dương Thị Hiệp, Trường THCS Bình An - Kiên Lương - An Giang
         </div>
       </div>
@@ -2142,8 +2142,8 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[800px]">
                   <thead>
                     <tr className="bg-gray-100 text-gray-700 text-sm">
                       <th className="p-4 font-bold border-b">Học sinh</th>
