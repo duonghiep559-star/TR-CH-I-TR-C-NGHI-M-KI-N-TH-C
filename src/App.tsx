@@ -179,6 +179,9 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
 
+  // Define admin check
+  const isAdmin = user?.email === 'hiepdt.c2binhan@gmail.com';
+
   // --- SUPABASE SYNC ---
   useEffect(() => {
     // Check active sessions and sets the user
@@ -1378,19 +1381,23 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
             </div>
 
             <div className="flex flex-wrap gap-2 mt-4">
-              <button onClick={resetGame} className="bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-blue-600 hover:shadow-lg active:scale-95 transition-all">
-                Reset câu hỏi
-              </button>
-              <button onClick={resetScores} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-red-600 hover:shadow-lg active:scale-95 transition-all">
-                Reset Bảng Điểm
-              </button>
-              <button onClick={() => documentFileInputRef.current?.click()} disabled={isUploading} className="bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-indigo-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-70">
-                <UploadCloud size={16}/> {isUploading ? 'Đang tải...' : 'Tải tài liệu'}
-              </button>
-              <button onClick={handleDeleteDocument} disabled={isUploading} className="bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-rose-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-70">
-                <Trash2 size={16}/> Xóa tài liệu
-              </button>
-              <input type="file" className="hidden" ref={documentFileInputRef} onChange={handleDocumentUpload} />
+              {isAdmin && (
+                <>
+                  <button onClick={resetGame} className="bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-blue-600 hover:shadow-lg active:scale-95 transition-all">
+                    Reset câu hỏi
+                  </button>
+                  <button onClick={resetScores} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-red-600 hover:shadow-lg active:scale-95 transition-all">
+                    Reset Bảng Điểm
+                  </button>
+                  <button onClick={() => documentFileInputRef.current?.click()} disabled={isUploading} className="bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-indigo-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-70">
+                    <UploadCloud size={16}/> {isUploading ? 'Đang tải...' : 'Tải tài liệu'}
+                  </button>
+                  <button onClick={handleDeleteDocument} disabled={isUploading} className="bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-rose-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-70">
+                    <Trash2 size={16}/> Xóa tài liệu
+                  </button>
+                  <input type="file" className="hidden" ref={documentFileInputRef} onChange={handleDocumentUpload} />
+                </>
+              )}
               <button onClick={() => { shuffleBalls(); shuffleTFBalls(); shuffleSABalls(); }} className="bg-green-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:bg-green-600 hover:shadow-lg active:scale-95 transition-all flex items-center gap-2">
                 <Shuffle size={16}/> Trộn Bóng
               </button>
@@ -1568,10 +1575,12 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
               <Database size={20} />
               <span>DỮ LIỆU HỆ THỐNG</span>
             </div>
-            <button onClick={() => setShowAdmin(true)} className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 rounded-xl text-sm font-bold shadow-md hover:from-indigo-600 hover:to-purple-700 hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 mb-3">
-              <ClipboardList size={18} />
-              Quản lý 60 Câu hỏi
-            </button>
+            {isAdmin && (
+              <button onClick={() => setShowAdmin(true)} className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 rounded-xl text-sm font-bold shadow-md hover:from-indigo-600 hover:to-purple-700 hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 mb-3">
+                <ClipboardList size={18} />
+                Quản lý 60 Câu hỏi
+              </button>
+            )}
             <button onClick={() => setShowTeacherDashboard(true)} className="w-full bg-gradient-to-r from-teal-500 to-emerald-600 text-white py-3 rounded-xl text-sm font-bold shadow-md hover:from-teal-600 hover:to-emerald-700 hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 mb-3">
               <BarChart size={18} />
               Tiến độ học sinh
@@ -1580,15 +1589,17 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
               <LogOut size={18} />
               Đăng xuất
             </button>
-            <div className="flex gap-2">
-              <button onClick={exportQuestionsJSON} className={`flex-1 border py-2 rounded-xl text-[11px] font-bold shadow-sm transition-all active:scale-95 flex flex-col items-center justify-center gap-1 ${isDarkMode ? 'bg-gray-700 text-indigo-400 border-indigo-500 hover:bg-gray-600' : 'bg-white text-[#4f46e5] border-indigo-200 hover:bg-indigo-50'}`}>
-                <Download size={14} /> Xuất CH
-              </button>
-              <button onClick={() => questionsFileInputRef.current?.click()} className={`flex-1 border py-2 rounded-xl text-[11px] font-bold shadow-sm transition-all active:scale-95 flex flex-col items-center justify-center gap-1 ${isDarkMode ? 'bg-gray-700 text-indigo-400 border-indigo-500 hover:bg-gray-600' : 'bg-white text-[#4f46e5] border-indigo-200 hover:bg-indigo-50'}`}>
-                <Upload size={14} /> Nhập CH
-              </button>
-              <input type="file" accept=".json" className="hidden" ref={questionsFileInputRef} onChange={importQuestionsJSON} />
-            </div>
+            {isAdmin && (
+              <div className="flex gap-2">
+                <button onClick={exportQuestionsJSON} className={`flex-1 border py-2 rounded-xl text-[11px] font-bold shadow-sm transition-all active:scale-95 flex flex-col items-center justify-center gap-1 ${isDarkMode ? 'bg-gray-700 text-indigo-400 border-indigo-500 hover:bg-gray-600' : 'bg-white text-[#4f46e5] border-indigo-200 hover:bg-indigo-50'}`}>
+                  <Download size={14} /> Xuất CH
+                </button>
+                <button onClick={() => questionsFileInputRef.current?.click()} className={`flex-1 border py-2 rounded-xl text-[11px] font-bold shadow-sm transition-all active:scale-95 flex flex-col items-center justify-center gap-1 ${isDarkMode ? 'bg-gray-700 text-indigo-400 border-indigo-500 hover:bg-gray-600' : 'bg-white text-[#4f46e5] border-indigo-200 hover:bg-indigo-50'}`}>
+                  <Upload size={14} /> Nhập CH
+                </button>
+                <input type="file" accept=".json" className="hidden" ref={questionsFileInputRef} onChange={importQuestionsJSON} />
+              </div>
+            )}
           </div>
         </div>
 
@@ -1787,7 +1798,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
       )}
 
       {/* --- MODAL QUẢN LÝ CÂU HỎI (ADMIN) --- */}
-      {showAdmin && (
+      {isAdmin && showAdmin && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 md:p-6">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-5 border-b flex justify-between items-center bg-gradient-to-r from-gray-50 to-gray-100">
