@@ -433,7 +433,7 @@ export default function App() {
         class_name: currentClass,
         score: 0,
         updated_at: new Date().toISOString()
-      }).catch(console.error);
+      }).then(({ error }) => { if (error) console.error(error); });
     }
   };
 
@@ -444,7 +444,7 @@ export default function App() {
     }));
     
     // Sync to Supabase
-    supabase.from('realtime_scores').delete().eq('id', id).catch(console.error);
+    supabase.from('realtime_scores').delete().eq('id', id).then(({ error }) => { if (error) console.error(error); });
   };
 
   const updateStudentScore = (id: string, points: number) => {
@@ -510,7 +510,7 @@ export default function App() {
       score: 0,
       updated_at: new Date().toISOString()
     }));
-    supabase.from('realtime_scores').upsert(upsertData).catch(console.error);
+    supabase.from('realtime_scores').upsert(upsertData).then(({ error }) => { if (error) console.error(error); });
 
     setShowImportListModal(false);
     setImportText('');
@@ -558,10 +558,10 @@ export default function App() {
 
             if (classInsertData.length > 0) {
               // We do inserts here, duplicate names might fail if there's a unique constraint, which is fine
-              supabase.from('classes').insert(classInsertData).catch(console.error);
+              supabase.from('classes').insert(classInsertData).then(({ error }) => { if (error) console.error(error); });
             }
             if (upsertData.length > 0) {
-               supabase.from('realtime_scores').upsert(upsertData).catch(console.error);
+               supabase.from('realtime_scores').upsert(upsertData).then(({ error }) => { if (error) console.error(error); });
             }
 
             const keys = Object.keys(json);
@@ -735,12 +735,21 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
 
       if (generatedData.mcQuestions && Array.isArray(generatedData.mcQuestions)) {
         setQuestions(generatedData.mcQuestions);
+        await supabase.from('questions_mc').delete().neq('id', 0);
+        const mcPayload = generatedData.mcQuestions.map((q: any) => ({ id: q.id, text: q.text, options: q.options, correct_index: q.correctIndex }));
+        await supabase.from('questions_mc').upsert(mcPayload);
       }
       if (generatedData.tfQuestions && Array.isArray(generatedData.tfQuestions)) {
         setTfQuestions(generatedData.tfQuestions);
+        await supabase.from('questions_tf').delete().neq('id', 0);
+        const tfPayload = generatedData.tfQuestions.map((q: any) => ({ id: q.id, text: q.text, is_true: q.isTrue }));
+        await supabase.from('questions_tf').upsert(tfPayload);
       }
       if (generatedData.saQuestions && Array.isArray(generatedData.saQuestions)) {
         setSaQuestions(generatedData.saQuestions);
+        await supabase.from('questions_sa').delete().neq('id', 0);
+        const saPayload = generatedData.saQuestions.map((q: any) => ({ id: q.id, text: q.text, correct_answer: q.correctAnswer }));
+        await supabase.from('questions_sa').upsert(saPayload);
       }
 
       setAlertDialog(`Đã tạo câu hỏi thành công từ tài liệu "${file.name}"! Bạn có thể xem và chỉnh sửa trong phần Quản lý Câu hỏi.`);
@@ -758,13 +767,31 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
     const file = event.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         try {
           const json = JSON.parse(e.target?.result as string);
           if (json && json.mc && json.tf && json.sa) {
             setQuestions(json.mc);
             setTfQuestions(json.tf);
             setSaQuestions(json.sa);
+            
+            // Sync to Supabase
+            try {
+              await supabase.from('questions_mc').delete().neq('id', 0);
+              const mcPayload = json.mc.map((q: any) => ({ id: q.id, text: q.text, options: q.options, correct_index: q.correctIndex }));
+              await supabase.from('questions_mc').upsert(mcPayload);
+
+              await supabase.from('questions_tf').delete().neq('id', 0);
+              const tfPayload = json.tf.map((q: any) => ({ id: q.id, text: q.text, is_true: q.isTrue }));
+              await supabase.from('questions_tf').upsert(tfPayload);
+
+              await supabase.from('questions_sa').delete().neq('id', 0);
+              const saPayload = json.sa.map((q: any) => ({ id: q.id, text: q.text, correct_answer: q.correctAnswer }));
+              await supabase.from('questions_sa').upsert(saPayload);
+            } catch (syncError) {
+              console.error("Error syncing imported questions", syncError);
+            }
+
             setAlertDialog("Nhập dữ liệu câu hỏi thành công!");
           } else {
             setAlertDialog("Cấu trúc file JSON câu hỏi không hợp lệ!");
@@ -1185,7 +1212,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                         setCurrentClass(cn);
                         setNewClassName('');
                         // Sync to Supabase
-                        await supabase.from('classes').insert({ name: cn }).catch(console.error);
+                        await supabase.from('classes').insert({ name: cn }).then(({ error }) => { if (error) console.error(error); });
                       }
                     }}
                   />
@@ -1197,7 +1224,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                         setCurrentClass(cn);
                         setNewClassName('');
                         // Sync to Supabase
-                        await supabase.from('classes').insert({ name: cn }).catch(console.error);
+                        await supabase.from('classes').insert({ name: cn }).then(({ error }) => { if (error) console.error(error); });
                       }
                     }}
                     className="bg-green-500 text-white px-3 rounded-xl text-sm font-bold shadow-md hover:bg-green-600 active:scale-95 transition-all flex items-center justify-center"
@@ -2001,7 +2028,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                     {/* Mock Data for Teacher Dashboard based on current students */}
                     {Object.entries(classesData)
                       .filter(([cls]) => dashboardClassFilter === 'all' || cls === dashboardClassFilter)
-                      .flatMap(([cls, students]) => students.map(s => ({...s, cls})))
+                      .flatMap(([cls, students]) => (students as Student[]).map(s => ({...s, cls})))
                       .map((student, idx) => (
                       <tr key={`${student.id}-${idx}`} className="border-b hover:bg-blue-50/50 transition-colors">
                         <td className="p-4 font-semibold text-gray-800 flex items-center gap-2">
