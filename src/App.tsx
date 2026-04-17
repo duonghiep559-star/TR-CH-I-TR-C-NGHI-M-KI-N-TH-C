@@ -194,13 +194,24 @@ export default function App() {
 
     const fetchSupabaseData = async () => {
       try {
-        // Fetch realtime scores first
-        const { data: realtimeData, error: realtimeError } = await supabase.from('realtime_scores').select('*');
+        // Fetch classes and realtime scores
+        const [ { data: classes }, { data: realtimeData } ] = await Promise.all([
+          supabase.from('classes').select('*'),
+          supabase.from('realtime_scores').select('*')
+        ]);
         
-        if (realtimeData && realtimeData.length > 0) {
-          setClassesData(prev => {
-            const newClassesData: Record<string, Student[]> = { ...prev };
-            
+        setClassesData(prev => {
+          const newClassesData: Record<string, Student[]> = { ...prev };
+          
+          // 1. Add classes that might be empty from Supabase
+          if (classes) {
+            classes.forEach(c => {
+              if (!newClassesData[c.name]) newClassesData[c.name] = [];
+            });
+          }
+
+          // 2. Populate students from realtime_scores
+          if (realtimeData && realtimeData.length > 0) {
             realtimeData.forEach(row => {
               if (!newClassesData[row.class_name]) newClassesData[row.class_name] = [];
               const existingIndex = newClassesData[row.class_name].findIndex(s => s.id === row.id);
@@ -222,35 +233,37 @@ export default function App() {
                 });
               }
             });
-            return newClassesData;
-          });
-          if (!classesData[currentClass] && Object.keys(classesData).length > 0) {
-            setCurrentClass(Object.keys(classesData)[0]);
-          }
-        } else {
-          // Fallback to old classes and students
-          const { data: classes } = await supabase.from('classes').select('*');
-          const { data: students } = await supabase.from('students').select('*');
-          
-          if (classes && students) {
-            setClassesData(prev => {
-              const newClassesData: Record<string, Student[]> = { ...prev };
-              classes.forEach(c => {
-                if (!newClassesData[c.name]) newClassesData[c.name] = [];
-                const classStudents = students.filter(s => s.class_id === c.id);
-                classStudents.forEach(s => {
-                  const existingIndex = newClassesData[c.name].findIndex(existing => existing.id === s.id);
-                  if (existingIndex >= 0) {
-                     newClassesData[c.name][existingIndex].score = s.score;
-                  } else {
-                     newClassesData[c.name].push({ id: s.id, name: s.name, score: s.score, class_id: s.class_id });
-                  }
+          } else {
+            // 3. Fallback: if realtime_scores is empty, check old students table
+            supabase.from('students').select('*').then(({ data: oldStudents }) => {
+              if (oldStudents && oldStudents.length > 0 && classes) {
+                setClassesData(prevLatest => {
+                  const merged = { ...prevLatest };
+                  classes.forEach(c => {
+                    if (!merged[c.name]) merged[c.name] = [];
+                    const classStudents = oldStudents.filter(s => s.class_id === c.id);
+                    classStudents.forEach(s => {
+                      const ex = merged[c.name].findIndex(existing => existing.id === s.id);
+                      if (ex < 0) {
+                         merged[c.name].push({ id: s.id, name: s.name, score: s.score });
+                      }
+                    });
+                  });
+                  return merged;
                 });
-              });
-              return newClassesData;
+              }
             });
           }
-        }
+
+          return newClassesData;
+        });
+
+        setClassesData(latest => {
+          if (!latest[currentClass] && Object.keys(latest).length > 0) {
+            setCurrentClass(Object.keys(latest)[0]);
+          }
+          return latest;
+        });
 
         // Fetch questions
         const { data: mcData } = await supabase.from('questions_mc').select('*').order('id');
@@ -526,7 +539,10 @@ export default function App() {
             
             // Sync imported JSON to Supabase
             const upsertData: any[] = [];
+            const classInsertData: any[] = [];
+
             Object.entries(json).forEach(([className, students]) => {
+               classInsertData.push({ name: className });
                if (Array.isArray(students)) {
                  students.forEach(s => {
                     upsertData.push({
@@ -539,6 +555,11 @@ export default function App() {
                  });
                }
             });
+
+            if (classInsertData.length > 0) {
+              // We do inserts here, duplicate names might fail if there's a unique constraint, which is fine
+              supabase.from('classes').insert(classInsertData).catch(console.error);
+            }
             if (upsertData.length > 0) {
                supabase.from('realtime_scores').upsert(upsertData).catch(console.error);
             }
@@ -1157,20 +1178,26 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                     className={`flex-1 rounded-xl px-3 py-2 text-sm outline-none border shadow-inner focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all ${isDarkMode ? 'border-gray-600 bg-gray-700 text-gray-100' : 'border-gray-300'}`}
                     value={newClassName}
                     onChange={(e) => setNewClassName(e.target.value)}
-                    onKeyDown={(e) => {
+                    onKeyDown={async (e) => {
                       if (e.key === 'Enter' && newClassName.trim() && !classesData[newClassName.trim()]) {
-                        setClassesData(prev => ({...prev, [newClassName.trim()]: []}));
-                        setCurrentClass(newClassName.trim());
+                        const cn = newClassName.trim();
+                        setClassesData(prev => ({...prev, [cn]: []}));
+                        setCurrentClass(cn);
                         setNewClassName('');
+                        // Sync to Supabase
+                        await supabase.from('classes').insert({ name: cn }).catch(console.error);
                       }
                     }}
                   />
                   <button 
-                    onClick={() => {
+                    onClick={async () => {
                       if(newClassName.trim() && !classesData[newClassName.trim()]) {
-                        setClassesData(prev => ({...prev, [newClassName.trim()]: []}));
-                        setCurrentClass(newClassName.trim());
+                        const cn = newClassName.trim();
+                        setClassesData(prev => ({...prev, [cn]: []}));
+                        setCurrentClass(cn);
                         setNewClassName('');
+                        // Sync to Supabase
+                        await supabase.from('classes').insert({ name: cn }).catch(console.error);
                       }
                     }}
                     className="bg-green-500 text-white px-3 rounded-xl text-sm font-bold shadow-md hover:bg-green-600 active:scale-95 transition-all flex items-center justify-center"
