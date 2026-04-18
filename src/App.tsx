@@ -165,6 +165,12 @@ export default function App() {
   const [studentSAInput, setStudentSAInput] = useState('');
   const [answeringStudentId, setAnsweringStudentId] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin && myStudentId) {
+      setAnsweringStudentId(myStudentId);
+    }
+  }, [activeQuestionId, activeTFQuestionId, activeSAQuestionId, myStudentId, isAdmin]);
   const [showTeacherDashboard, setShowTeacherDashboard] = useState(false);
   const [dashboardClassFilter, setDashboardClassFilter] = useState('all');
   const [dashboardTopicFilter, setDashboardTopicFilter] = useState('all');
@@ -188,6 +194,21 @@ export default function App() {
 
   // Define admin check
   const isAdmin = user?.email === 'hiepdt.c2binhan@gmail.com';
+  const myStudentId = user?.user_metadata?.student_id || null;
+
+  const claimIdentity = async (studentId: string, skipConfirm = false) => {
+    if (skipConfirm || confirm("Xác nhận đây là tên của bạn? Xin lưu ý bạn không thể tự thay đổi tên sau này.")) {
+      const { data, error } = await supabase.auth.updateUser({
+        data: { student_id: studentId }
+      });
+      if (!error) {
+        setUser(data.user);
+        if (!skipConfirm) setAlertDialog("Bạn đã cập nhật tên thành công!");
+      } else {
+        if (!skipConfirm) setAlertDialog("Lỗi: " + error.message);
+      }
+    }
+  };
 
   // --- SUPABASE SYNC ---
   useEffect(() => {
@@ -434,7 +455,7 @@ export default function App() {
   };
 
   // Logic Học sinh
-  const addStudent = () => {
+  const addStudent = async () => {
     if (newStudentName.trim()) {
       const newId = Date.now().toString() + Math.random().toString(36).substring(2,9);
       const newStudent = { id: newId, name: newStudentName.trim(), score: 0 };
@@ -446,13 +467,18 @@ export default function App() {
       setNewStudentName('');
 
       // Sync to Supabase
-      supabase.from('realtime_scores').upsert({
+      const { error } = await supabase.from('realtime_scores').upsert({
         id: newId,
         student_name: newStudent.name,
         class_name: currentClass,
         score: 0,
         updated_at: new Date().toISOString()
-      }).then(({ error }) => { if (error) console.error(error); });
+      });
+      if (error) console.error(error);
+      
+      if (!isAdmin && !myStudentId) {
+        await claimIdentity(newId, true);
+      }
     }
   };
 
@@ -856,7 +882,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
     initAudio(); // Init audio on first interaction
     if (!answeredBalls.includes(ballId)) {
       setActiveQuestionId(ballId);
-      setAnsweringStudentId(students.length > 0 ? students[0].id : '');
+      setAnsweringStudentId(!isAdmin && myStudentId ? myStudentId : (students.length > 0 ? students[0].id : ''));
     }
   };
 
@@ -864,7 +890,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
     initAudio();
     if (!answeredTFBalls.includes(ballId)) {
       setActiveTFQuestionId(ballId);
-      setAnsweringStudentId(students.length > 0 ? students[0].id : '');
+      setAnsweringStudentId(!isAdmin && myStudentId ? myStudentId : (students.length > 0 ? students[0].id : ''));
     }
   };
 
@@ -872,7 +898,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
     initAudio();
     if (!answeredSABalls.includes(ballId)) {
       setActiveSAQuestionId(ballId);
-      setAnsweringStudentId(students.length > 0 ? students[0].id : '');
+      setAnsweringStudentId(!isAdmin && myStudentId ? myStudentId : (students.length > 0 ? students[0].id : ''));
       setStudentSAInput('');
     }
   };
@@ -971,7 +997,9 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
 
   // Tính Top 3 & Phân trang
   const top3Students = [...students].sort((a, b) => b.score - a.score).slice(0, 3);
-  const filteredStudents = students.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredStudents = isAdmin 
+    ? students.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    : Object.values(classesData).flat().filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalPages = Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE) || 1;
   const displayedStudents = filteredStudents.slice((currentPage - 1) * STUDENTS_PER_PAGE, currentPage * STUDENTS_PER_PAGE);
 
@@ -1279,6 +1307,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
         <div className={`flex-1 rounded-3xl border-[6px] lg:border-[10px] shadow-2xl flex flex-col overflow-hidden relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-[#f4e6c3] border-[#c18c5d]'}`}>
           
           {/* Class Header */}
+          {isAdmin && (
           <div className={`p-4 flex flex-col items-center border-b relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-[#fff3d4] border-[#e6d0a7]'}`}>
              <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-20 h-6 bg-red-500 rounded-b-xl flex justify-center items-center shadow-md">
                  <div className="w-12 h-1.5 bg-red-800 rounded-full opacity-50"></div>
@@ -1359,6 +1388,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                 </div>
              </div>
           </div>
+          )}
 
           {/* Add, Search and Import/Export */}
           <div className={`p-3 flex flex-col gap-3 border-b transition-colors duration-300 ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-orange-200 bg-[#fdf8ed]'}`}>
@@ -1379,6 +1409,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
               </button>
             </div>
             
+            {isAdmin && (
             <div className="grid grid-cols-3 gap-2">
               <button onClick={() => setShowImportListModal(true)} className="flex flex-col items-center justify-center gap-1 bg-teal-500 text-white py-2 rounded-xl text-[10px] font-bold shadow-sm hover:bg-teal-600 hover:shadow-md transition-all active:scale-95">
                 <FileText size={14} /> Nhập DS
@@ -1391,6 +1422,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
               </button>
               <input type="file" accept=".json" className="hidden" ref={jsonFileInputRef} onChange={importJSON} />
             </div>
+            )}
 
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -1421,6 +1453,13 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                     <span className={`font-bold px-2 py-0.5 rounded-md min-w-[2.5rem] text-center ${isDarkMode ? 'text-blue-400 bg-blue-900/30' : 'text-blue-600 bg-blue-50'}`}>
                       {student.score}
                     </span>
+                    {!isAdmin && !myStudentId && (
+                       <button onClick={() => claimIdentity(student.id)} className="text-[10px] bg-green-500 hover:bg-green-600 font-bold shadow text-white rounded px-2 py-1 active:scale-95 transition-all">Đây là tôi</button>
+                    )}
+                    {(!isAdmin && myStudentId === student.id) && (
+                       <span className="text-[10px] bg-purple-500 font-bold shadow text-white rounded px-2 py-1">Tôi</span>
+                    )}
+                    {isAdmin && (
                     <button 
                       onClick={() => removeStudent(student.id)}
                       className="text-red-400 opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-600 p-1 hover:bg-red-50 rounded-md"
@@ -1428,6 +1467,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                     >
                       <X size={16} strokeWidth={2.5} />
                     </button>
+                    )}
                   </div>
                 </div>
               ))
@@ -1460,7 +1500,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
       </div>
 
       {/* PHẦN GIỮA: MÀN HÌNH CHÍNH & BẢNG XẾP HẠNG/SYSTEM DATA ON MOBILE */}
-      <div className="flex-1 p-2 lg:p-4 relative w-full max-w-full lg:h-full lg:overflow-hidden lg:flex lg:flex-col min-h-0">
+      <div className="flex-1 flex flex-col p-2 lg:p-4 relative min-h-[80vh] lg:h-full w-full max-w-full lg:overflow-hidden overflow-y-auto overflow-x-hidden">
         
         {/* Header Control */}
         <div className="flex flex-col lg:flex-row flex-wrap justify-between items-start mb-4 pt-2 lg:pl-4 gap-2 lg:gap-4 w-full flex-shrink-0">
@@ -1533,7 +1573,7 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
         </div>
 
         {/* Bảng 60 Viên cầu - Wrapper */}
-        <div className="w-full lg:max-w-full lg:pr-[17rem] pb-4 lg:flex-1 lg:overflow-y-auto lg:overflow-x-hidden overflow-visible custom-scrollbar">
+        <div className="flex-1 flex flex-col items-center lg:items-start justify-start w-full lg:max-w-full lg:pr-[17rem] pb-4 overflow-visible lg:overflow-y-auto lg:overflow-x-hidden custom-scrollbar">
           
           <div className={`w-full max-w-5xl mx-auto lg:mx-0 mb-4 mt-2 px-4 py-2 rounded-xl shadow-sm border text-center font-bold text-lg tracking-wide ${isDarkMode ? 'bg-gray-800 border-gray-700 text-purple-400' : 'bg-white/80 border-white text-purple-800'}`}>
             BÀI TẬP 1: TRẮC NGHIỆM (60 CÂU)
@@ -1785,10 +1825,17 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                   <select 
                       value={answeringStudentId} 
                       onChange={(e) => setAnsweringStudentId(e.target.value)}
-                      className="border-2 border-purple-300 rounded-xl p-2.5 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 font-semibold text-gray-700 min-w-[250px] bg-white shadow-sm transition-all cursor-pointer"
+                      disabled={!isAdmin}
+                      className="border-2 border-purple-300 rounded-xl p-2.5 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 font-semibold text-gray-700 min-w-[250px] bg-white shadow-sm transition-all cursor-pointer disabled:bg-gray-100 disabled:opacity-80"
                   >
-                      <option value="" disabled>-- Chọn học sinh --</option>
-                      {students.map(s => (
+                      {(!isAdmin && !myStudentId) ? (
+                        <option value="" disabled>-- Vui lòng chọn "Đây là tôi" ở danh sách --</option>
+                      ) : (
+                        <option value="" disabled>-- Chọn học sinh --</option>
+                      )}
+                      {(isAdmin || !myStudentId) ? students.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.score} điểm)</option>
+                      )) : Object.values(classesData).flat().filter(s => s.id === myStudentId).map(s => (
                           <option key={s.id} value={s.id}>{s.name} ({s.score} điểm)</option>
                       ))}
                   </select>
@@ -1835,10 +1882,17 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                   <select 
                       value={answeringStudentId} 
                       onChange={(e) => setAnsweringStudentId(e.target.value)}
-                      className="border-2 border-teal-300 rounded-xl p-2.5 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 font-semibold text-gray-700 min-w-[250px] bg-white shadow-sm transition-all cursor-pointer"
+                      disabled={!isAdmin}
+                      className="border-2 border-teal-300 rounded-xl p-2.5 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 font-semibold text-gray-700 min-w-[250px] bg-white shadow-sm transition-all cursor-pointer disabled:bg-gray-100 disabled:opacity-80"
                   >
-                      <option value="" disabled>-- Chọn học sinh --</option>
-                      {students.map(s => (
+                      {(!isAdmin && !myStudentId) ? (
+                        <option value="" disabled>-- Vui lòng chọn "Đây là tôi" ở danh sách --</option>
+                      ) : (
+                        <option value="" disabled>-- Chọn học sinh --</option>
+                      )}
+                      {(isAdmin || !myStudentId) ? students.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.score} điểm)</option>
+                      )) : Object.values(classesData).flat().filter(s => s.id === myStudentId).map(s => (
                           <option key={s.id} value={s.id}>{s.name} ({s.score} điểm)</option>
                       ))}
                   </select>
@@ -1888,10 +1942,17 @@ YÊU CẦU QUAN TRỌNG: Tạo CHÍNH XÁC 60 câu trắc nghiệm, 60 câu đú
                   <select 
                       value={answeringStudentId} 
                       onChange={(e) => setAnsweringStudentId(e.target.value)}
-                      className="border-2 border-orange-300 rounded-xl p-2.5 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 font-semibold text-gray-700 min-w-[250px] bg-white shadow-sm transition-all cursor-pointer"
+                      disabled={!isAdmin}
+                      className="border-2 border-orange-300 rounded-xl p-2.5 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 font-semibold text-gray-700 min-w-[250px] bg-white shadow-sm transition-all cursor-pointer disabled:bg-gray-100 disabled:opacity-80"
                   >
-                      <option value="" disabled>-- Chọn học sinh --</option>
-                      {students.map(s => (
+                      {(!isAdmin && !myStudentId) ? (
+                        <option value="" disabled>-- Vui lòng chọn "Đây là tôi" ở danh sách --</option>
+                      ) : (
+                        <option value="" disabled>-- Chọn học sinh --</option>
+                      )}
+                      {(isAdmin || !myStudentId) ? students.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.score} điểm)</option>
+                      )) : Object.values(classesData).flat().filter(s => s.id === myStudentId).map(s => (
                           <option key={s.id} value={s.id}>{s.name} ({s.score} điểm)</option>
                       ))}
                   </select>
